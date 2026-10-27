@@ -46,7 +46,7 @@ let beta: string;
 let gamma: string;
 const shown = (abs: string) => `~${abs.slice(stack.home.length)}`;
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 let stack: Stack;
 test.beforeAll(async () => {
@@ -198,10 +198,10 @@ test("AC-3 New project from a folder makes the project and picks it", async ({
   await expect(
     v3Sidebar(page).getByRole("button", { name: "lilos-beta" }),
   ).toBeVisible();
-  await peek.getByPlaceholder("Message Default…").fill("hello in beta");
+  await peek.getByPlaceholder("Message Hermes…").fill("hello in beta");
   await peek.getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
-  await expect(trail(page)).toContainText("Default · lilos-beta", {
+  await expect(trail(page)).toContainText("Hermes · lilos-beta", {
     timeout: 30_000,
   });
   await shoot(page, "ac-3-new-project-picked");

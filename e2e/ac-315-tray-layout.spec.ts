@@ -30,7 +30,7 @@ const repo = path.resolve(here, "..");
     thread opens in the peek, which is where the tray and cards live. */
 async function chatDefault(page: Page, webUrl: string, text: string) {
   await skipFirstRun(page);
-  await startChat(page, webUrl, { id: "default", name: "Default" }, text);
+  await startChat(page, webUrl, { id: "default", name: "Hermes" }, text);
 }
 
 /** A reply typed in the thread composer in the peek. */

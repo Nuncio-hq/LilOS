@@ -79,7 +79,7 @@ test.describe.configure({ mode: "serial" });
    `@` — setup the old DM-home flow did not have. */
 test.setTimeout(120_000);
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 const panel = (page: Page) => v3Peek(page).locator("[data-thread-panel]");
 /** The thread's reply box — the composer that takes `@`. */
@@ -181,7 +181,7 @@ test("AC-2 with no folder picked the @ menu has an Employees section only (D-#19
      runs first, before any test makes the fixture repo a project. */
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/#?page=threads&open=newchat:default`);
-  await expect(v3Peek(page).getByPlaceholder("Message Default…")).toBeVisible({
+  await expect(v3Peek(page).getByPlaceholder("Message Hermes…")).toBeVisible({
     timeout: 30_000,
   });
   await expect(v3Peek(page).getByTitle(/^Project · /)).toHaveAttribute(

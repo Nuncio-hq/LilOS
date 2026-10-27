@@ -105,7 +105,7 @@ test.describe.configure({ mode: "serial" });
    way a person starts one: the draft's Folder chip (the app's recents, which
    `startChatInFolder` seeds over the relay — the old `?roots=` scan fed the
    DM-home picker's discovered list, which no longer exists), then Send. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 const tab = (page: Page, name: RegExp | string) =>
   page.getByRole("tab", { name });

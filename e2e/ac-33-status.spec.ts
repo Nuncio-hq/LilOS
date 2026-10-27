@@ -54,7 +54,7 @@ test.describe("AC-1-4 (#33) live system status", () => {
         await startChat(
           page,
           parts.webUrl,
-          { id: "default", name: "Default" },
+          { id: "default", name: "Hermes" },
           text,
         );
       await openPolled(page, parts.webUrl);

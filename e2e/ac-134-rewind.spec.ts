@@ -92,7 +92,7 @@ test.describe.configure({ mode: "serial" });
 
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, which on these one-agent stacks is Default. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("textarea").last();

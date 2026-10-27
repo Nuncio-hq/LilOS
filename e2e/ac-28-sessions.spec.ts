@@ -215,7 +215,7 @@ async function openApp(stack: Procs, page: Page) {
     );
   }
   const nav0 = await navs();
-  const row = v3Sidebar(page).getByRole("button", { name: /default/i });
+  const row = v3Sidebar(page).getByRole("button", { name: /hermes/i });
   await expect(row).toBeVisible({
     timeout: 60_000, // the first run spawns the engine; suite runs are parallel
   });
@@ -243,7 +243,7 @@ async function openApp(stack: Procs, page: Page) {
     expect(stack.viteLog()).not.toContain("optimized dependencies changed");
     expect(stack.viteLog()).not.toContain("new dependencies optimized");
   }
-  return { id, name: "Default" };
+  return { id, name: "Hermes" };
 }
 
 /** The Threads page, the session list. */

@@ -24,7 +24,7 @@ const SHOTS = path.join(repo, "test-results", "ac-585");
 
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, which on this one-agent stack is Default. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** A new chat's thread in the side peek (past first run). */
 const chat = async (stack: Stack, page: Page, text: string) => {

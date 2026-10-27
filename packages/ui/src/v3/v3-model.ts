@@ -463,6 +463,10 @@ export function runtimeLook(id: string): { label: string; tone: V3Tone } {
   };
 }
 
+/* #872: the rule lives in @lilos/client-runtime so web and mobile render
+   the same name; re-exported here for the v3 surfaces. */
+export { agentDisplayName } from "@lilos/client-runtime";
+
 /** Engine-side `updatable` names → the page fields they let you edit
     (soul holds the persona — the page's Instructions). */
 const PAGE_FIELD = {

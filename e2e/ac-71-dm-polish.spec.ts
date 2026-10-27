@@ -43,7 +43,7 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const AGENT = { id: "default", name: "Default" };
+const AGENT = { id: "default", name: "Hermes" };
 
 /** A new chat with the seeded Default employee: the draft beside Threads,
     then the thread in the side peek. Past first run. */
@@ -55,7 +55,7 @@ async function chatDefault(page: Page, text: string) {
 /** The default agent's dot in the sidebar: the per-employee badge. */
 const agentDot = (page: Page, status: string) =>
   v3Sidebar(page)
-    .getByRole("button", { name: /default/i })
+    .getByRole("button", { name: /hermes/i })
     .locator(`[data-v3-status="${status}"]`);
 
 /** Counts <img> elements that failed to load (broken images). */
@@ -232,7 +232,7 @@ test("AC-5 the Electron app menu is named LilOS", async () => {
   try {
     expect(await app.evaluate(({ app }) => app.getName())).toBe("LilOS");
     await expect(
-      v3Sidebar(win).getByRole("button", { name: /default/i }),
+      v3Sidebar(win).getByRole("button", { name: /hermes/i }),
     ).toBeVisible({ timeout: 60_000 });
     // captureScreenshot fails if the window hasn't painted yet — wait for
     // visible+painted and retry.

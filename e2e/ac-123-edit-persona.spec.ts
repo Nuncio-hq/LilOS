@@ -90,12 +90,12 @@ test.afterAll(async () => {
 async function openDefault(stack: Stack, page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
-  const row = v3Sidebar(page).getByRole("button", { name: /Default/ });
+  const row = v3Sidebar(page).getByRole("button", { name: /Hermes/ });
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.click();
   const record = v3Main(page);
   await expect(
-    record.getByRole("heading", { level: 1, name: "Default" }),
+    record.getByRole("heading", { level: 1, name: "Hermes" }),
   ).toBeVisible();
   return record;
 }
@@ -127,7 +127,7 @@ async function chatWithDefault(page: Page, text: string, model: string) {
   await expect(
     v3Peek(page).locator('[data-slot="model-picker-trigger"]'),
   ).toContainText(model, { timeout: 30_000 });
-  await v3Peek(page).getByPlaceholder("Message Default…").fill(text);
+  await v3Peek(page).getByPlaceholder("Message Hermes…").fill(text);
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
 }
@@ -250,7 +250,7 @@ test("AC-4 a running session keeps its model; the next new session uses the upda
   // Edit the default model mid-conversation: Default's page, Edit, pick,
   // Save — then come back to the open session.
   await v3Sidebar(page)
-    .getByRole("button", { name: /Default/ })
+    .getByRole("button", { name: /Hermes/ })
     .click();
   const record = v3Main(page);
   await openEdit(record);

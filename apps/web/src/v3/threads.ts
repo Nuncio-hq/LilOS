@@ -1,4 +1,5 @@
 import {
+  agentDisplayName,
   type SessionModel,
   type ThreadStatus,
   threadStatus,
@@ -57,11 +58,17 @@ export const V3_STATUS: Record<ThreadStatus, V3Status> = {
 /** What the engine asks, as the ask card's text. */
 function askText(ask: Ask): { title: string; text: string } {
   const r = ask.request;
-  if (ask.hire)
+  if (ask.hire) {
+    /* #872: a default-profile proposal reads "Hermes" like every surface. */
+    const who = agentDisplayName({
+      name: ask.hire.name,
+      profile: ask.hire.profile,
+    });
     return {
-      title: `Add ${ask.hire.name}`,
-      text: `${ask.hire.name} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
+      title: `Add ${who}`,
+      text: `${who} · ${ask.hire.role} on ${ask.hire.model || "the engine's default model"}`,
     };
+  }
   // The question is the title; "The ask" row only adds the full text when
   // the title had to cut it (the card hides a row equal to its title).
   if (r.kind === "question")

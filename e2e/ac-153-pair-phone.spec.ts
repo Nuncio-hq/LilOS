@@ -51,7 +51,7 @@ async function openPhonePane(page: Page, webUrl: string) {
   await skipFirstRun(page);
   await page.goto(`${webUrl}/`);
   await v3Sidebar(page)
-    .getByRole("button", { name: /Default/ })
+    .getByRole("button", { name: /Hermes/ })
     .waitFor({ timeout: 30_000 });
   await v3Sidebar(page).getByRole("button", { name: "Settings" }).click();
   await page.getByRole("button", { name: "Phone", exact: true }).click();

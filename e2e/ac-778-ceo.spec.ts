@@ -98,7 +98,7 @@ test("Make CEO moves the chip everywhere and redraws the org chart", async ({
       side.getByRole("button", { name: /Quill/ }).locator(CHIP),
     ).toBeVisible();
     await expect(
-      side.getByRole("button", { name: /default/i }).locator(CHIP),
+      side.getByRole("button", { name: /hermes/i }).locator(CHIP),
     ).toHaveCount(0);
 
     await page.goto(`${stack.webUrl}/#?page=people`);

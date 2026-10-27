@@ -7,6 +7,7 @@ import {
 } from "@lilos/contracts/app";
 import type { AgentDescriptor, DescribeResult } from "@lilos/contracts/engine";
 import {
+  agentDisplayName,
   folderLabel,
   type V3Agent,
   type V3Data,
@@ -99,10 +100,13 @@ function toAgent(
   lastChat: V3Agent["lastChat"],
   week: WeekCounts,
 ): V3Agent {
+  /* #872: the untouched stock agent reads "Hermes" — the raw record's
+     runtime/profile decide, never the resolved row's. */
+  const name = agentDisplayName(e);
   return {
     id: e.id,
-    name: e.name,
-    tone: toneOf(e.name),
+    name,
+    tone: toneOf(name),
     role: e.role,
     /* Absent reports to the owner; the page shows the profile name (D-#775). */
     ...(e.reportsTo ? { reportsTo: e.reportsTo } : {}),

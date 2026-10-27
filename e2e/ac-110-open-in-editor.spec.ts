@@ -78,7 +78,7 @@ async function sessionOnRepo(page: Page) {
   await startChatInFolder(
     page,
     stack,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     repoDir,
     "hello — give me a session",
   );

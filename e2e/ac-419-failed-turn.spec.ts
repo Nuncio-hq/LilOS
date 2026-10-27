@@ -68,7 +68,7 @@ test("AC-1/AC-3 a turn.completed.error shows the failure chip on the turn and th
   await startChat(
     page,
     stack.webUrl,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     "Say hi",
   );
   await expect(page.locator("[data-agentturn]").last()).toContainText(

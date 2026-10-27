@@ -131,7 +131,7 @@ test.describe.configure({ mode: "serial" });
 
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, so the spec needs no employee lookup. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** A new session in `dir`, the way a person starts one: the new-chat draft's
     folder chip, then Send. Lands on the thread beside Threads; returns its

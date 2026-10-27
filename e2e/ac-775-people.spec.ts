@@ -230,7 +230,7 @@ test("Hire, then message the new agent at once", async ({ page }) => {
     await skipFirstRun(page);
     await page.goto(`${stack.webUrl}/`);
     const side = v3Sidebar(page);
-    await expect(side.getByRole("button", { name: /Default/ })).toBeVisible({
+    await expect(side.getByRole("button", { name: /Hermes/ })).toBeVisible({
       timeout: 30_000,
     });
     await side.getByRole("button", { name: "Hire an agent" }).click();

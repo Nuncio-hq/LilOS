@@ -130,7 +130,7 @@ test("General and Engine & models show the real company and engine; what you cha
     .locator("../..");
   await expect(relayRow).toContainText("Connected");
   await expect(
-    main(page).getByRole("button", { name: /Default/ }),
+    main(page).getByRole("button", { name: /Hermes/ }),
   ).toContainText("Connected");
   await main(page).getByRole("button", { name: "Check again" }).click();
   await expect(main(page)).toContainText("Checked just now · all good.", {

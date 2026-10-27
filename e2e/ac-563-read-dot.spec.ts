@@ -53,7 +53,7 @@ const cardDot = (page: Page) => page.locator("[data-thread-unseen]");
 /** The Default agent's sidebar row, and its dot in status `status`. */
 const agentDot = (page: Page, status: string) =>
   v3Sidebar(page)
-    .getByRole("button", { name: /default/i })
+    .getByRole("button", { name: /hermes/i })
     .locator(`[data-v3-status="${status}"]`);
 
 test("finish while unopened dots the card and the agent; opening clears both on both clients", async ({

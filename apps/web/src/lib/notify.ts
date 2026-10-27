@@ -18,6 +18,7 @@ import type {
   Employee,
 } from "@lilos/contracts/app";
 import type { EngineEvent, EngineRequest } from "@lilos/contracts/engine";
+import { agentDisplayName } from "@lilos/ui/v3-data";
 
 export interface NotifyContext {
   conversations: readonly Conversation[];
@@ -46,8 +47,10 @@ const employeeOf = (
   return ch ? ctx.employees.find((e) => e.id === ch.employeeId) : undefined;
 };
 
-const employeeName = (conv: Conversation, ctx: NotifyContext): string =>
-  employeeOf(conv, ctx)?.name ?? "An employee";
+const employeeName = (conv: Conversation, ctx: NotifyContext): string => {
+  const e = employeeOf(conv, ctx);
+  return e ? agentDisplayName(e) : "An employee";
+};
 
 /** Long text is cut at a word boundary so the banner stays a one-liner —
     mirrors `apps/relay/src/push.ts truncateBody` (#561). */

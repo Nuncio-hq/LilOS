@@ -115,7 +115,7 @@ async function chatFromDraft(page: Page, choice: RegExp, text: string) {
   await chip.click();
   await v3Peek(page).getByRole("menuitemradio", { name: choice }).click();
   await expect(chip).toContainText(choice, { timeout: 15_000 });
-  await v3Peek(page).getByPlaceholder("Message Default…").fill(text);
+  await v3Peek(page).getByPlaceholder("Message Hermes…").fill(text);
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
   /* The draft opens on the folder of the agent's newest thread by activity:
@@ -161,7 +161,7 @@ test("AC-1 the new-chat folder follows the last session's folder — a move coun
   await startChatInFolder(
     page,
     stack,
-    { id: "default", name: "Default" },
+    { id: "default", name: "Hermes" },
     otherDir,
     "in the other folder",
   );

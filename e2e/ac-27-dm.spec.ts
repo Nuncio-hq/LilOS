@@ -63,7 +63,7 @@ test.afterAll(async () => {
 
 test.describe.configure({ mode: "serial" });
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** A new chat with Default, past first run; resolves once its thread is open
     in the peek. */
@@ -94,7 +94,7 @@ test("AC-1 first run auto-hires the `default` engine profile", async ({
   await skipFirstRun(page);
   await page.goto(`${stackA.webUrl}/`);
   const sidebar = v3Sidebar(page);
-  await expect(sidebar.getByRole("button", { name: /default/i })).toBeVisible({
+  await expect(sidebar.getByRole("button", { name: /hermes/i })).toBeVisible({
     timeout: 30_000,
   });
   // The hire affordance is wired (issue #115); first run hired `default`
@@ -111,7 +111,7 @@ test("AC-2 sidebar shows People + status only (no channels/projects/tickets)", a
   await skipFirstRun(page);
   await page.goto(`${stackA.webUrl}/`);
   const sidebar = v3Sidebar(page);
-  await expect(sidebar.getByRole("button", { name: /default/i })).toBeVisible({
+  await expect(sidebar.getByRole("button", { name: /hermes/i })).toBeVisible({
     timeout: 30_000,
   });
   await expect(sidebar.getByText("People")).toBeVisible();
@@ -562,11 +562,9 @@ test("AC-7 real-app build: every visible control has a working handler", async (
     await skipFirstRun(page);
     await page.goto(`http://127.0.0.1:${port}/`);
     const sidebar = v3Sidebar(page);
-    await expect(sidebar.getByRole("button", { name: /default/i })).toBeVisible(
-      {
-        timeout: 30_000,
-      },
-    );
+    await expect(sidebar.getByRole("button", { name: /hermes/i })).toBeVisible({
+      timeout: 30_000,
+    });
     // Click every control on the surfaces a user can reach: sidebar buttons,
     // the page, the opened person. A control that throws or dead-ends fails
     // the run via the page's console error listener.
@@ -607,7 +605,7 @@ test("AC-7 real-app build: every visible control has a working handler", async (
     // Open Default (the sweep may have left any page up) and sweep what it
     // shows: a sidebar pick is a jump — the person IS the page now (D-#769).
     await sidebar
-      .getByRole("button", { name: /default/i })
+      .getByRole("button", { name: /hermes/i })
       .click({ timeout: 10_000 });
     await expect(page).toHaveURL(/[#?&]page=agent&id=/);
     await clickAll("main");
@@ -669,7 +667,7 @@ test("AC-8 `_electron` shell renders the same DM app", async () => {
       timeout: 60_000,
     });
     await expect(
-      v3Sidebar(win).getByRole("button", { name: /default/i }),
+      v3Sidebar(win).getByRole("button", { name: /hermes/i }),
     ).toBeVisible({ timeout: 60_000 });
     // Page.captureScreenshot intermittently fails on Electron under load
     // (CI: "Unable to capture screenshot") — wait for visible+painted and

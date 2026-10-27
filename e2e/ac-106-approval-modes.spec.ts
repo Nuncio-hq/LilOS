@@ -34,7 +34,7 @@ const repo = path.resolve(here, "..");
 const SHOTS = path.join(repo, "test-results", "ac-106");
 /* The seeded employee. An id that names nobody opens the new-chat draft on
    the default agent, which on this one-agent stack is Default. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** The thread's access pill (the draft composer has none). */
 const pill = (page: Page) =>
@@ -260,12 +260,12 @@ test("AC-3 the new-chat draft's Ask / Full access pill starts on Settings' defau
     await draftAgent(page, "Blanca");
     await expect(draftPill(page)).toHaveAttribute("data-access", "ask");
     /* …and Default's pick is still there when the chip comes back to it. */
-    await draftAgent(page, "Default");
+    await draftAgent(page, "Hermes");
     await expect(draftPill(page)).toHaveAttribute("data-access", "full");
     await page.screenshot({ path: `${SHOTS}/ac-3-draft-pill-full.png` });
 
     /* ── The thread starts with the draft's access, read on its own pill ── */
-    await sendDraft(page, "Default");
+    await sendDraft(page, "Hermes");
     await expect(pill(page)).toHaveAttribute("data-access", "full");
 
     /* ── Settings' default moves the next draft; a pick still beats it ── */

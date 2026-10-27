@@ -137,7 +137,7 @@ async function openApp(stack: Stack, page: Page) {
   await skipFirstRun(page);
   await page.goto(`${stack.webUrl}/`);
   await expect(
-    v3Sidebar(page).getByRole("button", { name: /Default/ }),
+    v3Sidebar(page).getByRole("button", { name: /Hermes/ }),
   ).toBeVisible({ timeout: 30_000 });
 }
 

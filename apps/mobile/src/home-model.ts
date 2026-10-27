@@ -1,3 +1,4 @@
+import { agentDisplayName } from "@lilos/client-runtime";
 import type {
   AppChannel,
   Ask,
@@ -173,7 +174,9 @@ export function toEmployeeRow(
   );
   const base = {
     id: e.id,
-    name: e.name,
+    /* #872: the untouched stock agent reads "Hermes" — record stores
+       "Default". */
+    name: agentDisplayName(e),
     role: e.role,
     tone: toneOf(e.id),
     /* #563: any of this agent's threads finished past the read watermark
@@ -291,7 +294,7 @@ export function toSessionGroups(
     const base = {
       id: c.id,
       employeeId: employee.id,
-      employeeName: employee.name,
+      employeeName: agentDisplayName(employee),
       tone: toneOf(employee.id),
       title: sessionLabel(c.id, wire),
       ...(project ? { project } : {}),

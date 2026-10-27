@@ -82,7 +82,7 @@ test("a fresh home: Welcome, a real engine check, then Home with the first agent
     await expect(side).toContainText("Rowan Labs");
     // The agent the engine hired on its own was renamed: still one agent.
     await expect(side.getByRole("button", { name: /Ada/ })).toBeVisible();
-    await expect(side.getByRole("button", { name: /Default/i })).toHaveCount(0);
+    await expect(side.getByRole("button", { name: /Hermes/i })).toHaveCount(0);
     await expect(page.locator("main")).toContainText("1 agent");
 
     // Its model is the one picked, and its folder is the chat's folder. The

@@ -175,11 +175,11 @@ async function boot(): Promise<Procs> {
   };
 }
 
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 /** The new-chat draft's box and Send button, in the peek. */
 const draftBox = (page: Page) =>
-  v3Peek(page).getByPlaceholder("Message Default…");
+  v3Peek(page).getByPlaceholder("Message Hermes…");
 const draftSend = (page: Page) =>
   v3Peek(page).getByRole("button", { name: "Send" });
 

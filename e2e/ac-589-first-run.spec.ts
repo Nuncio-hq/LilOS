@@ -59,7 +59,7 @@ test("AC-1 the ticks follow the real legs — relay up, engine up, company opens
     await page.getByRole("button", { name: "Next", exact: true }).click(); // folder
     await page.getByRole("button", { name: "Open my company" }).click();
     await expect(
-      v3Sidebar(page).getByRole("button", { name: /Default/ }),
+      v3Sidebar(page).getByRole("button", { name: /Hermes/ }),
     ).toBeVisible({ timeout: 30_000 });
   } finally {
     await stack.stop();

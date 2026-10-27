@@ -129,7 +129,7 @@ test.describe.configure({ mode: "serial" });
    first). An id that names nobody opens the draft on the default agent, so
    the spec needs no employee lookup. Returns the conversation id. */
 const startSession = (page: Page, dir: string, text: string) =>
-  startChatInFolder(page, stack, { id: "default", name: "Default" }, dir, text);
+  startChatInFolder(page, stack, { id: "default", name: "Hermes" }, dir, text);
 
 const send = async (page: Page, text: string) => {
   const box = page.locator("[data-thread-panel] textarea").last();

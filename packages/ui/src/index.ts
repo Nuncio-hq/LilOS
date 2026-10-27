@@ -65,7 +65,13 @@ export {
   ParkLine,
   ThreadLineage,
 } from "./v3/v3-helpers";
-export { agentNameOf, agentOf, boardStatus, snoozed } from "./v3/v3-model";
+export {
+  agentDisplayName,
+  agentNameOf,
+  agentOf,
+  boardStatus,
+  snoozed,
+} from "./v3/v3-model";
 export {
   isRecordRoute,
   navFromParams,

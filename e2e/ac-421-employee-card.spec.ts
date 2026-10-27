@@ -114,7 +114,7 @@ test("AC-1 the agent page carries the card's rows: engine, profile, model, now; 
   page,
 }) => {
   test.setTimeout(90_000);
-  const record = await openAgentPage(page, "Default");
+  const record = await openAgentPage(page, "Hermes");
 
   // The card's grid on the page: Engine → "Runs on", Model, Now (+ Idle).
   // engine.name lands on the harness's second status report (~10s); the row

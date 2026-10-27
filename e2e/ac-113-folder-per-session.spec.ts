@@ -80,7 +80,7 @@ test.describe.configure({ mode: "serial" });
 
 /* An id that names nobody opens the new-chat draft on the default agent, so
    the spec needs no employee lookup. */
-const DEFAULT_AGENT = { id: "default", name: "Default" };
+const DEFAULT_AGENT = { id: "default", name: "Hermes" };
 
 const panel = (page: Page) => page.locator("[data-thread-panel]");
 const dialogOf = (page: Page) => page.locator("[data-addfolder]");
@@ -252,7 +252,7 @@ test("AC-3 the project menu and the session header offer direct mode only (no wo
     { timeout: 15_000 },
   );
   await expect(peek.getByText("direct · no git")).toHaveCount(0);
-  await peek.getByPlaceholder("Message Default…").fill("direct mode check");
+  await peek.getByPlaceholder("Message Hermes…").fill("direct mode check");
   await peek.getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });
 
@@ -331,7 +331,7 @@ test("AC-6 a new chat pre-selects the last session's project; a no-project sessi
     .click();
   await expect(chip).toContainText("No project", { timeout: 15_000 });
   await v3Peek(page)
-    .getByPlaceholder("Message Default…")
+    .getByPlaceholder("Message Hermes…")
     .fill("no folder please");
   await v3Peek(page).getByRole("button", { name: "Send" }).click();
   await expect(page).toHaveURL(/open=thread:[^&]+/, { timeout: 30_000 });

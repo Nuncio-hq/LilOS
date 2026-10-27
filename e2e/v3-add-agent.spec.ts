@@ -58,7 +58,7 @@ test("the sidebar's Agents section lists the roster and a ＋ that opens the dia
     timeout: 30_000,
   });
   await expect(
-    side(page).getByRole("button", { name: /Default/ }),
+    side(page).getByRole("button", { name: /Hermes/ }),
   ).toBeVisible();
   await expect(
     side(page).getByRole("button", { name: "Add agent" }),
@@ -76,7 +76,7 @@ test("the sidebar's Agents section lists the roster and a ＋ that opens the dia
     await expect(
       who_.getByRole("radio", { name: new RegExp(name) }),
     ).toBeVisible();
-  await expect(who_.getByRole("radio", { name: /Default/ })).toHaveCount(0);
+  await expect(who_.getByRole("radio", { name: /Hermes/ })).toHaveCount(0);
   /* The runtime catalog row is there whether or not its CLI is installed:
      greyed with the probe's reason when it is not. */
   const devin = who_.getByRole("radio", { name: /Devin/ });

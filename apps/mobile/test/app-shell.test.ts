@@ -169,7 +169,7 @@ describe("#596 — push/deep links stack the thread list under Thread; loading &
        and falls back to plain Back when no employee was resolved. */
     expect(thread).toContain("thread-gone-back");
     expect(thread).toContain("Back to");
-    expect(thread).toContain("goneEmployee.name");
+    expect(thread).toContain("agentDisplayName(goneEmployee)");
     expect(thread).toContain('popTo("Dm"');
     expect(thread).toContain("navigation.canGoBack()");
     /* The employee can't resolve off a conversation the directory has
