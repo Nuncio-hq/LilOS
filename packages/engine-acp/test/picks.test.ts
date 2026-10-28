@@ -250,6 +250,25 @@ describe("per-job model/effort picks reach the agent (D-#846)", () => {
     }
   }, 30_000);
 
+  test("models.list names the launch spec's defaultEffort, not the probe's (D-#899)", async () => {
+    const h = make(undefined, "high");
+    try {
+      const list = (await h.request("models.list")) as {
+        models: { id: string; efforts?: string[]; defaultEffort?: string }[];
+      };
+      /* The probe session's thought_level currentValue is "medium"; the
+         spec's "high" is what unpicked turns run with — every reasoning
+         row names it, and "high" is in the advertised ladder. */
+      expect(list.models.length).toBeGreaterThan(0);
+      for (const m of list.models) {
+        expect(m.efforts).toContain("high");
+        expect(m.defaultEffort).toBe("high");
+      }
+    } finally {
+      h.close();
+    }
+  }, 30_000);
+
   test("a defaultEffort the session doesn't advertise skips with the note", async () => {
     const h = make(undefined, "max");
     try {

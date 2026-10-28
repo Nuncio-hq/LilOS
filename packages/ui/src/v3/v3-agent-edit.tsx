@@ -12,7 +12,7 @@ import { ChipMenu } from "./v3-chip-menu";
 import { EscLayer } from "./v3-keys";
 import type { V3Actions } from "./v3-page-types";
 import { Switch } from "./v3-settings-bits";
-import type { V3Agent, V3AgentPatch } from "./v3-types";
+import type { V3Agent, V3AgentPatch, V3Runtime } from "./v3-types";
 
 /* Editing an agent in place, Notion-style (#872): there is no edit mode
    and no page-wide Save/Cancel. A writable field swaps its text for an
@@ -200,12 +200,20 @@ export function ModelProp({
   agent,
   choices,
   save,
+  rt,
+  onRetry,
 }: {
   icon: ReactNode;
   agent: V3Agent;
   /** The owning runtime's picker labels; empty = the model stays text. */
   choices: string[];
   save?: FieldSave;
+  /** The agent's own runtime row — #899: while its catalog ask is in
+      flight the row reads "Loading models…"; a refused ask reads "Models
+      unavailable" and `onRetry` re-asks. Never the fallback "Engine
+      default" while the screen's ask is live. */
+  rt?: V3Runtime;
+  onRetry?: () => void;
 }) {
   const [held, setHeld] = useState<{ words: string; model: string }>();
   /* A newer pick supersedes a pending prompt: its generation counter
@@ -213,6 +221,7 @@ export function ModelProp({
      the superseded pick (#872). */
   const pick = useRef(0);
   const canPick = !!save && choices.length > 0;
+  const runtimeAsk = rt && !rt.isDefault && choices.length === 0;
   return (
     <>
       <Prop icon={icon} label="Default model">
@@ -234,6 +243,23 @@ export function ModelProp({
             label={<span className="truncate">{agent.model}</span>}
             options={choices.map((m) => ({ id: m, node: <span>{m}</span> }))}
           />
+        ) : runtimeAsk ? (
+          rt.catalogState === "failed" ? (
+            <button
+              type="button"
+              title={`Models unavailable — ${rt.catalogDetail ?? "the engine did not answer"}. Click to retry`}
+              onClick={onRetry}
+              className="underline-offset-2 hover:underline"
+            >
+              Models unavailable
+            </button>
+          ) : rt.catalogLanded ? (
+            /* The runtime answered with no models: the agent's own is the
+               only name (#890's static chip on the page). */
+            agent.model
+          ) : (
+            <span className="text-muted-foreground">Loading models…</span>
+          )
         ) : (
           agent.model
         )}

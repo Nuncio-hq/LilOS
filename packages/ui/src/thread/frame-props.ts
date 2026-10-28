@@ -67,6 +67,12 @@ export interface ThreadFrameProps {
   /* A thread on a runtime whose own catalog hasn't landed (#895): its
      current model, drawn read-only in place of the picker. */
   modelStatic?: string;
+  /* #899: the runtime's catalog ask, in flight ("loading") or refused
+     ("failed" + `catalogDetail`): the chip reads "Loading models…" /
+     "Models unavailable" and `onCatalogRetry` re-asks. */
+  catalogState?: "loading" | "failed";
+  catalogDetail?: string;
+  onCatalogRetry?: () => void;
   /* The engine's `models.list.default` — the unpinned-employee pick (#92 AC-5). */
   defaultModel?: string;
   /* The default's provider — a `{provider?, id}` pair disambiguates a shared id. */

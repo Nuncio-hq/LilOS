@@ -109,14 +109,16 @@ describe("useModelCatalog on a runtime thread (#895)", () => {
     }
   });
 
-  test("AC-2: until the runtime's catalog lands the list is empty — never Hermes's", () => {
-    // Not live: nothing asks the runtime yet.
+  test("AC-2: until the runtime's catalog lands the list is empty — never Hermes's", async () => {
+    /* #899: an open thread IS the screen open — the ask fires even on an
+       idle runtime, but the composer still lists nothing until it lands. */
     setRoster("stopped");
     const { result } = renderHook(() => useModelCatalog("acp:devin"));
-    expect(result.current.catalog).toEqual([]);
-    expect(result.current.picker).toBeUndefined();
+    await waitFor(() =>
+      expect(asked).toEqual([{ runtime: "acp:devin", refresh: undefined }]),
+    );
+    await waitFor(() => expect(result.current.catalog).toEqual(DEVIN_MODELS));
     expect(result.current.own).toBe(true);
-    expect(asked).toEqual([]);
   });
 
   test("AC-1/AC-3: the landed catalog is the runtime's own, with its efforts and default", async () => {

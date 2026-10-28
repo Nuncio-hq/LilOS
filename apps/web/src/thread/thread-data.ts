@@ -65,6 +65,12 @@ export interface ThreadData {
   /* #895: the model of a runtime thread whose catalog hasn't landed — the
      composer shows it as a read-only chip, never Hermes's list. */
   modelStatic: string | undefined;
+  /* #899: the runtime's own catalog ask, in flight ("loading") or refused
+     ("failed" + `catalogDetail`) — the composer's chip reads "Loading
+     models…" / "Models unavailable" and `onCatalogRetry` re-asks. */
+  catalogState: "loading" | "failed" | undefined;
+  catalogDetail: string | undefined;
+  onCatalogRetry: (() => void) | undefined;
   modelOpen: boolean;
   setModelOpen: (open: boolean) => void;
   onModel: (c: ModelChoice) => void | Promise<unknown>;

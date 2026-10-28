@@ -1,6 +1,6 @@
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import type { ChatStatus } from "ai";
-import { CpuIcon } from "lucide-react";
+import { CpuIcon, Loader2Icon } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   PromptInput,
@@ -46,6 +46,9 @@ export function Composer({
   onModel,
   picker,
   modelStatic,
+  catalogState,
+  catalogDetail,
+  onCatalogRetry,
   modelOpen,
   onModelOpen,
   queued,
@@ -84,6 +87,13 @@ export function Composer({
   /* No models but a pick to show (a runtime thread whose catalog hasn't
      landed, #895): the model read-only, same chip the new-chat box draws. */
   modelStatic?: string;
+  /* #899: the runtime's own catalog ask, in flight ("loading") or refused
+     ("failed" + `catalogDetail`) — the chip reads "Loading models…" /
+     "Models unavailable" and `onCatalogRetry` re-asks, never a model the
+     runtime did not name. */
+  catalogState?: "loading" | "failed";
+  catalogDetail?: string;
+  onCatalogRetry?: () => void;
   /* Controlled open on the model picker — `/model` opens it. */
   modelOpen?: boolean;
   onModelOpen?: (open: boolean) => void;
@@ -260,6 +270,32 @@ export function Composer({
                     onOpenChange={onModelOpen}
                     {...picker}
                   />
+                ) : catalogState === "loading" ? (
+                  /* #899: the screen's own ask is in flight — say so,
+                     never a model this runtime did not name. */
+                  <span
+                    data-slot="model-chip-loading"
+                    title="Asking the engine for its models"
+                    className="inline-flex h-6 shrink-0 items-center gap-1.5 px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 text-[12.5px] text-muted-foreground"
+                  >
+                    <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
+                    <span className="max-w-60 truncate @max-[480px]:hidden">
+                      Loading models…
+                    </span>
+                  </span>
+                ) : catalogState === "failed" ? (
+                  <button
+                    type="button"
+                    data-slot="model-chip-failed"
+                    title={`Models unavailable — ${catalogDetail ?? "the engine did not answer"}. Click to retry`}
+                    onClick={onCatalogRetry}
+                    className="inline-flex h-6 shrink-0 items-center gap-1.5 px-1.5 @max-[480px]:gap-0 @max-[480px]:px-1 text-[12.5px] text-muted-foreground hover:text-foreground"
+                  >
+                    <CpuIcon className="size-3.5 shrink-0" />
+                    <span className="max-w-60 truncate @max-[480px]:hidden">
+                      Models unavailable
+                    </span>
+                  </button>
                 ) : modelStatic && !models?.length ? (
                   <span
                     data-slot="model-chip-static"

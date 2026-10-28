@@ -1028,6 +1028,25 @@ describe("engine-hermes #8: agents + models capabilities", () => {
     expect(opus?.fast).toBe(true);
   });
 
+  test("#899 the shipped catalog always reports a default model and a default effort", async () => {
+    const { h } = setup();
+    const r = (await h.request("models.list")) as {
+      default?: string;
+      models: { id: string; efforts?: string[]; defaultEffort?: string }[];
+    };
+    /* The chip names what turns run with: `default` is the gateway's own
+       model, and every reasoning row names the configured
+       agent.reasoning_effort ("high" in the fake). */
+    expect(r.default).toBe("stub-model-a");
+    const reasoning = r.models.filter((m) => m.efforts?.length);
+    expect(reasoning.length).toBeGreaterThan(0);
+    for (const m of reasoning) expect(m.defaultEffort).toBe("high");
+    /* A non-reasoning row never names an effort it cannot run. */
+    expect(
+      r.models.find((m) => m.id === "stub-model-b")?.defaultEffort,
+    ).toBeUndefined();
+  });
+
   test("AC-4 (#194) models.list derives names from bare ids — the real Hermes catalog shapes", async () => {
     const { gw, h } = setup();
     /* A catalog like Oscar's live `model.options`: several providers × many

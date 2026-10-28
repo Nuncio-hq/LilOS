@@ -66,7 +66,11 @@ vi.mock("../src/lib/runtime", async (orig) => {
 import { relay } from "../src/lib/runtime";
 import { saveAgent } from "../src/v3/employees";
 import { profileKey } from "../src/v3/profiles";
-import { runtimeRows } from "../src/v3/runtimes";
+import {
+  openRuntimeScreen,
+  retryRuntimeCatalog,
+  runtimeRows,
+} from "../src/v3/runtimes";
 
 const devinEmployee = (): Employee => ({
   id: "emp_devin",
@@ -287,6 +291,84 @@ describe("the boot catalog ask", () => {
           ?.find((r) => r.id === "acp:cold")?.models,
       ).toEqual(["SWE-2 High", "SWE-2 Max"]),
     );
+    stop();
+  });
+});
+
+/* D-#899: a runtime agent's screen asks the catalog even while its
+   adapter sleeps — the ask lazy-starts it — and the row reports the
+   in-flight/refused ask for the chip. Each test uses its own runtime id:
+   `screenOpened` is a session-long set, so reusing a row another test
+   already opened would measure its ask. */
+describe("the screen-open ask (D-#899)", () => {
+  const asked = (runtime: string) =>
+    (relay.listModels as ReturnType<typeof vi.fn>).mock.calls.filter(
+      ([p]) => (p as { runtime?: string } | undefined)?.runtime === runtime,
+    ).length;
+  const row = (id: string) =>
+    runtimeRows()
+      .get()
+      ?.find((r) => r.id === id);
+
+  test("boot asks an idle runtime nothing; opening its screen asks once", async () => {
+    employee = { ...devinEmployee(), runtime: "acp:screen" };
+    /* The fake answers DEVIN_MODELS only for "acp:devin" — this test's
+       runtime gets the same catalog once. */
+    (relay.listModels as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (): Promise<ModelsListResult> => ({
+        models: DEVIN_MODELS,
+        default: "swe-2-high",
+        defaultProvider: "devin",
+      }),
+    );
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { id: "acp:screen", label: "Devin", available: true, state: "idle" },
+    ]);
+    const stop = runtimeRows().subscribe(() => {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(asked("acp:screen")).toBe(0);
+
+    openRuntimeScreen("acp:screen");
+    // The ask is marked in flight before it lands — the chip's "Loading".
+    expect(row("acp:screen")?.catalogState).toBe("loading");
+    await vi.waitFor(() => {
+      expect(asked("acp:screen")).toBe(1);
+      expect(row("acp:screen")?.models).toEqual(["SWE-2 High", "SWE-2 Max"]);
+      expect(row("acp:screen")?.catalogState).toBeUndefined();
+    });
+    // Re-opening does not re-ask a landed catalog.
+    openRuntimeScreen("acp:screen");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(asked("acp:screen")).toBe(1);
+    stop();
+  });
+
+  test("a refused ask reads failed with the reason; Retry re-asks", async () => {
+    (relay.listModels as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error("devin not on PATH"))
+      .mockImplementationOnce(
+        async (): Promise<ModelsListResult> => ({
+          models: DEVIN_MODELS,
+          default: "swe-2-high",
+          defaultProvider: "devin",
+        }),
+      );
+    employee = { ...devinEmployee(), runtime: "acp:gone" };
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { id: "acp:gone", label: "Devin", available: true, state: "idle" },
+    ]);
+    const stop = runtimeRows().subscribe(() => {});
+    openRuntimeScreen("acp:gone");
+    await vi.waitFor(() => {
+      expect(row("acp:gone")?.catalogState).toBe("failed");
+      expect(row("acp:gone")?.catalogDetail).toContain("devin not on PATH");
+    });
+    /* The dedupe would hold the refusal — Retry forgets it and re-asks. */
+    expect(asked("acp:gone")).toBe(1);
+    retryRuntimeCatalog("acp:gone");
+    await vi.waitFor(() => expect(asked("acp:gone")).toBe(2));
     stop();
   });
 });

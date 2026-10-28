@@ -31,6 +31,18 @@ const described = atom<Record<string, AgentDescriptor>>({});
    when the runtime's own verdict changes (a failed engine coming up), not
    on every employee/status tick. */
 const attempted = new Map<string, string>();
+/* D-#899: runtimes an open screen asked for (`openRuntimeScreen` marks
+   them here) — their profiles describe even while the adapter sleeps. */
+const pending = new Set<string>();
+
+/** D-#899: a screen showing this runtime's agent asks its profile even
+   while the adapter sleeps — the describe lazy-starts it and lands
+   `agentsUpdatable`, the page's editable fields. */
+export function openRuntimeProfile(runtime: string): void {
+  if (isDefaultRuntime(runtime) || pending.has(runtime)) return;
+  pending.add(runtime);
+  void load().catch(() => {});
+}
 
 /** The profile fields the engine lets the app write (the `agents`
    capability's `detail.updatable`, D-#19). */
@@ -67,8 +79,11 @@ async function load(): Promise<void> {
         if (row?.available === false) return [];
         /* A coding runtime answers only when it is already up — a plain
            read must never npm-install an engine (D-#866); the record's
-           own fields fill the page until real work starts it. */
-        if (!isDefault && !runtimeLive(runtime)) return [];
+           own fields fill the page until real work starts it. An open
+           screen is the exception (D-#899): it marked the runtime
+           pending, and this describe is what lazy-starts the adapter. */
+        if (!isDefault && !runtimeLive(runtime) && !pending.has(runtime ?? ""))
+          return [];
         const key = profileKey(runtime, e.profile);
         const sig = row ? `${row.available}:${row.state ?? ""}` : "";
         return [[key, { key, profile: e.profile, runtime, sig }] as const];

@@ -5,6 +5,7 @@ import { runtimeLook } from "@lilos/ui";
 import { atom, computed, onMount, type ReadableAtom } from "nanostores";
 import { modelVisibility, relay } from "../lib/runtime";
 import { type ModelRow, modelLabel, modelRows, pickOf } from "./models";
+import { openRuntimeProfile } from "./profiles";
 import { defaultRuntimeId, runtimeLive } from "./runtime-ids";
 
 /* D-#761/#872 — what the app knows about each runtime beyond the status
@@ -23,6 +24,29 @@ type RuntimeCatalog = {
 };
 
 const catalogs = atom<Record<string, RuntimeCatalog>>({});
+
+/* D-#899: runtimes an open screen asked for. Fills only from
+   `openRuntimeScreen` — a status sync never adds one — so booting still
+   starts nothing (D-#866), while a runtime agent's chat, thread or page
+   asks the catalog even while the adapter sleeps (the ask itself
+   lazy-starts it, D-#761). Leaving the screen keeps the row: a later
+   open finds the catalog already landed. */
+const screenOpened = new Set<string>();
+/* The screen's own ask, in flight ("loading") or refused ("failed" +
+   the row's reason) — the chips read it as "Loading models…" / "Models
+   unavailable" instead of a model the catalog never named. */
+const catalogPhase = atom<
+  Record<string, { state: "loading" | "failed"; detail?: string }>
+>({});
+const setPhase = (
+  runtime: string,
+  v?: { state: "loading" | "failed"; detail?: string },
+) => {
+  const next = { ...catalogPhase.get() };
+  if (v) next[runtime] = v;
+  else delete next[runtime];
+  catalogPhase.set(next);
+};
 
 /* A row gets asked once per supervisor verdict — `state`/`available`
    changing is the only signal a runtime that failed to answer may answer
@@ -78,6 +102,9 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
   )
     return;
   inflight.add(r.id);
+  /* #899: mark the ask in flight before it leaves — the chips read
+     "loading" from the first render after the screen opened. */
+  setPhase(r.id, { state: "loading" });
   try {
     const res: ModelsListResult = await relay.listModels({ runtime: r.id });
     attempted.set(r.id, {
@@ -86,32 +113,72 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
       empty: (res.models ?? []).length === 0,
     });
     land(r.id, res);
-  } catch {
-    /* The runtime can't answer (not installed, down) — its agents' pages
-       show the model as text until a changed status row re-asks. */
+    setPhase(r.id);
+  } catch (e) {
+    /* The runtime can't answer (not installed, down) — a screen that
+       asked gets "failed" with the reason so its chip can offer Retry
+       (#899 AC-4); a boot ask just stays an empty catalog. */
     attempted.set(r.id, { key, at: Date.now(), empty: false });
+    if (screenOpened.has(r.id))
+      setPhase(r.id, {
+        state: "failed",
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    else setPhase(r.id);
   } finally {
     inflight.delete(r.id);
   }
 }
 
+/** D-#899: a screen that shows this runtime's agent asks its catalog even
+   while the adapter sleeps — the ask is what lazy-starts it. A landed
+   catalog is not re-asked; a refused one is deduped on the row's signature
+   like every ask — the verdict changing (state/available/detail) is the
+   only signal a retry may answer — a screen mounted across status polls
+   must not spam the engine on each poll. `retryRuntimeCatalog` is the
+   explicit forget-and-ask. */
+export function openRuntimeScreen(runtime: string): void {
+  if (!runtime || runtime === defaultRuntimeId()) return;
+  screenOpened.add(runtime);
+  const row = relay.status
+    .get()
+    ?.result?.runtimes?.find((r) => r.id === runtime);
+  if (row && !catalogs.get()[runtime]?.options.length) void ask(row);
+  /* The agent page's editable fields come from the same lazy describe —
+       asking it here lands `agentsUpdatable` while idle too. */
+  openRuntimeProfile(runtime);
+}
+
+/** The failed chip's Retry: forget the refusal and ask like the screen
+    just opened. */
+export function retryRuntimeCatalog(runtime: string): void {
+  attempted.delete(runtime);
+  openRuntimeScreen(runtime);
+}
+
+const sync = () => {
+  const rows = relay.status.get()?.result?.runtimes;
+  if (!rows?.length) return;
+  /* Only a runtime an agent runs on AND that is already running is
+     asked — `models.list` lazy-starts the adapter (D-#761), so asking
+     every hired row would spawn idle hires' engines at boot (D-#866).
+     An open screen's runtime is the exception (D-#899): it asks even
+     idle, and the ask is what starts it. A runtime started by real work
+     changes its status row, which asks again. */
+  const inUse = new Set(
+    relay.employees.get().flatMap((e) => (e.runtime ? [e.runtime] : [])),
+  );
+  // The first row is the default engine — its catalog is the global one.
+  for (const r of rows.slice(1))
+    if (
+      r.available !== false &&
+      inUse.has(r.id) &&
+      (runtimeLive(r.id) || screenOpened.has(r.id))
+    )
+      void ask(r);
+};
+
 onMount(catalogs, () => {
-  const sync = () => {
-    const rows = relay.status.get()?.result?.runtimes;
-    if (!rows?.length) return;
-    /* Only a runtime an agent runs on AND that is already running is
-       asked — `models.list` lazy-starts the adapter (D-#761), so asking
-       every hired row would spawn idle hires' engines at boot (D-#866).
-       A runtime started by real work changes its status row, which asks
-       again. */
-    const inUse = new Set(
-      relay.employees.get().flatMap((e) => (e.runtime ? [e.runtime] : [])),
-    );
-    // The first row is the default engine — its catalog is the global one.
-    for (const r of rows.slice(1))
-      if (r.available !== false && inUse.has(r.id) && runtimeLive(r.id))
-        void ask(r);
-  };
   const stops = [relay.status.listen(sync), relay.employees.listen(sync)];
   sync();
   return () => {
@@ -126,10 +193,11 @@ let store: ReadableAtom<V3Runtime[] | undefined> | undefined;
     binds at boot). */
 export function runtimeRows(): ReadableAtom<V3Runtime[] | undefined> {
   store ??= computed(
-    [relay.status, catalogs],
-    (s, cats): V3Runtime[] | undefined =>
+    [relay.status, catalogs, catalogPhase],
+    (s, cats, phases): V3Runtime[] | undefined =>
       s.result?.runtimes?.map((r, i) => {
         const cat = cats[r.id];
+        const phase = phases[r.id];
         return {
           id: r.id,
           label: r.label,
@@ -141,6 +209,9 @@ export function runtimeRows(): ReadableAtom<V3Runtime[] | undefined> {
           ...(cat && cat.rows.length > 0
             ? { models: cat.rows.map((x) => x.label) }
             : {}),
+          ...(phase ? { catalogState: phase.state } : {}),
+          ...(phase?.detail ? { catalogDetail: phase.detail } : {}),
+          ...(cat ? { catalogLanded: true } : {}),
           ...(i === 0 ? {} : { tone: runtimeLook(r.id).tone }),
         };
       }),

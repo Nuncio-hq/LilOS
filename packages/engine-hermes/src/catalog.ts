@@ -278,6 +278,20 @@ export async function listModels(
     model?: unknown;
     provider?: unknown;
   };
+  /* #899: the effort chip names the level turns actually run with — the
+     gateway's configured `agent.reasoning_effort`, read the same way
+     describe reads approvals.mode (a refused read on an older build just
+     means "no default to report", never a failed list). */
+  let configuredEffort: string | undefined;
+  try {
+    const cfg = (await gw.request("config.get", {
+      key: "agent.reasoning_effort",
+    })) as { value?: unknown };
+    if (typeof cfg?.value === "string" && cfg.value)
+      configuredEffort = cfg.value;
+  } catch {
+    /* Older gateways answer unknown-key — leave the default unnamed. */
+  }
   /* #92 AC-1: every authenticated provider row — a pick from another
      provider switches the session's provider, not just the model. */
   const rows = (r.providers ?? []).filter((p) => p.authenticated !== false);
@@ -323,6 +337,13 @@ export async function listModels(
         name: displayModelName(id),
         provider: slug,
         ...(efforts ? { efforts } : {}),
+        /* #899: name the configured level only on rows that can run it —
+            a non-reasoning model never takes an effort pick. */
+        ...(efforts &&
+        configuredEffort &&
+        (efforts as readonly string[]).includes(configuredEffort)
+          ? { defaultEffort: configuredEffort }
+          : {}),
         ...(cap?.fast === true ? { fast: true } : {}),
         ...(contextWindow ? { contextWindow } : {}),
       });

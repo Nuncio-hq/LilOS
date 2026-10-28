@@ -1,6 +1,6 @@
 import { modelCatalogOf } from "@lilos/ui";
 import type { ModelPickerExtras } from "@lilos/ui/types";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   describeActionError,
   refreshModels,
@@ -19,7 +19,9 @@ import {
 import { sayError } from "../lib/toast";
 import { isDefaultRuntime } from "../v3/runtime-ids";
 import {
+  openRuntimeScreen,
   refreshRuntimeModels,
+  retryRuntimeCatalog,
   runtimeCatalogs,
   runtimeRows,
 } from "../v3/runtimes";
@@ -47,10 +49,26 @@ export function useModelCatalog(runtime?: string) {
   const rows = useAtom(runtimeRows());
   const cats = useAtom(runtimeCatalogs());
   const own = isDefaultRuntime(runtime) ? undefined : runtime;
+  /* #899: an open thread IS this runtime's screen — its mount asks the
+     catalog (and profile) even while the adapter sleeps; the ask is what
+     lazy-starts it. */
+  useEffect(() => {
+    if (own) openRuntimeScreen(own);
+  }, [own]);
   const ownCat = own
     ? modelCatalogOf({ runtimes: rows, modelCatalogs: cats }, { runtime: own })
     : undefined;
   const catalog = own ? (ownCat?.options ?? NONE) : engineCatalog;
+  /* The screen's own ask, in flight or refused — the composer's chip reads
+     "Loading models…" / "Models unavailable" (click retries) until the
+     catalog lands, never a model this runtime did not name. A catalog that
+     landed empty stays a landed catalog: the read-only model chip (#895)
+     still draws. */
+  const ownRow = own ? rows?.find((r) => r.id === own) : undefined;
+  const catalogState =
+    own && !ownCat?.options?.length
+      ? (ownRow?.catalogState ?? (ownCat ? undefined : "loading"))
+      : undefined;
   const defaultModel = own ? ownCat?.defaultModel : engineModel;
   const defaultProvider = own ? ownCat?.defaultProvider : engineProvider;
   const picker = useMemo<ModelPickerExtras | undefined>(() => {
@@ -94,5 +112,8 @@ export function useModelCatalog(runtime?: string) {
     picker,
     description,
     own: own !== undefined,
+    catalogState,
+    catalogDetail: ownRow?.catalogDetail,
+    retryCatalog: own ? () => retryRuntimeCatalog(own) : undefined,
   };
 }

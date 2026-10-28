@@ -180,6 +180,18 @@ export type V3Runtime = {
       not asked yet or no catalog — the Model field shows the current
       model as text. */
   models?: string[];
+  /* #899 — an open screen's catalog ask, in flight ("loading") or refused
+     ("failed"): the model chip reads "Loading models…" / "Models
+     unavailable" (click retries) instead of naming a model the runtime
+     never reported. */
+  catalogState?: "loading" | "failed";
+  /** The refused ask's reason, in the row's own words (the failure
+      chip's tooltip). */
+  catalogDetail?: string;
+  /** The catalog answered — even empty. A landed-empty runtime's row
+      shows the agent's model read-only; only a never-answered one
+      spins "Loading models…". */
+  catalogLanded?: boolean;
   /** Avatar colour for agents on this runtime — the runtime's mark, so a
       Devin agent never looks like a Hermes one. */
   tone?: V3Tone;

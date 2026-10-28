@@ -128,6 +128,9 @@ export class FakeGateway implements GatewayLike {
   sessionYolo = new Map<string, boolean>();
   /** #106: the global approvals.mode — config.get reads it back. */
   approvalsMode = "smart";
+  /** #899: the configured agent.reasoning_effort — config.get reads it
+      back as each model's default effort. */
+  agentReasoningEffort = "high";
   /** config.set calls in order — {key, value, session_id, scope, confirm_expensive_model}. */
   configSetCalls: Record<string, unknown>[] = [];
   /** `method[:key]` in arrival order — order-sensitive assertions, e.g.
@@ -736,7 +739,11 @@ export class FakeGateway implements GatewayLike {
         const reply = () =>
           key === "approvals.mode"
             ? Promise.resolve({ key, value: this.approvalsMode })
-            : Promise.reject(new RpcError(4002, `unknown config key: ${key}`));
+            : key === "agent.reasoning_effort"
+              ? Promise.resolve({ key, value: this.agentReasoningEffort })
+              : Promise.reject(
+                  new RpcError(4002, `unknown config key: ${key}`),
+                );
         return this.configGetGate ? this.configGetGate.then(reply) : reply();
       }
       case "complete.slash": {
