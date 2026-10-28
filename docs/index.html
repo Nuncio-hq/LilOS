@@ -28,72 +28,72 @@ input{width:100%;max-width:420px;padding:8px 12px;border-radius:8px;border:1px s
 <body>
 <div class="layout">
 <nav aria-label="Contents">
-  <ol>
-    <li><a href="#what">What LilOS is</a></li>
-    <li><a href="#direction">Where it is going</a></li>
-    <li><a href="#map">Repo map</a></li>
-    <li><a href="#architecture">How pieces fit</a></li>
-    <li><a href="#work">How work happens</a></li>
-    <li><a href="#docs-rules">Docs &amp; decisions</a></li>
-    <li><a href="#decisions">Decisions in force</a></li>
-    <li><a href="#app-review">App Review notes</a></li>
-  </ol>
+<ol>
+<li><a href="#what">What LilOS is</a></li>
+<li><a href="#direction">Where it is going</a></li>
+<li><a href="#map">Repo map</a></li>
+<li><a href="#architecture">How pieces fit</a></li>
+<li><a href="#work">How work happens</a></li>
+<li><a href="#docs-rules">Docs &amp; decisions</a></li>
+<li><a href="#decisions">Decisions in force</a></li>
+<li><a href="#app-review">App Review notes</a></li>
+</ol>
 </nav>
 
 <main>
 <header>
-  <h1>LilOS — the one document</h1>
-  <p>Read this page, then code. Only what code can't say: product, direction, map, how work happens, one in-force decision line, citing its file. Plans, discussion, history: GitHub issues.</p>
+<h1>LilOS — the one document</h1>
+<p>Read this page, then code. Only what code can't say: product, direction, map, how work happens, one in-force decision line, citing its file. Plans, discussion, history: GitHub issues.</p>
 </header>
 
 <section id="what">
-  <h2>What LilOS is</h2>
-  <p>CompanyOS: AI-agent employees. Hire them, hand them threads, watch them work, step in only when they need you. Each thread is one engine session on one protocol (Hermes first, never glued in). Engine owns sessions, memory, skills, profiles; LilOS owns only its records: company, projects, channels, messages, tickets, employees. Runs on Mac (Electron, two background services), iPhone (paired over Tailscale).</p>
-  <p><b>Stage: prototype.</b> <code>prototype/</code> is UI source of truth: UI change lands in <code>packages/ui</code> (<code>ui-native</code> for mobile) first, Oscar accepts it, then real app implements it. Mock data is not a contract.</p>
-  <p><b>Oscar is the client</b>, not a reviewer. He doesn't write code, rarely reads diffs; he accepts or rejects product he can try. You own correctness end to end. "Done": he can try it, with evidence, without reading code. Plain product language. He chats in Vietnamese; repo is English.</p>
+<h2>What LilOS is</h2>
+<p>CompanyOS: AI-agent employees. Hire them, hand them threads, watch them work, step in only when they need you. Each thread is one engine session on one protocol (Hermes first, never glued in). Engine owns sessions, memory, skills, profiles; LilOS owns only its records: company, projects, channels, messages, tickets, employees. Runs on Mac (Electron, two background services), iPhone (paired over Tailscale).</p>
+<p><b>Stage: prototype.</b> <code>prototype/</code> is UI source of truth: UI change lands in <code>packages/ui</code> (<code>ui-native</code> for mobile) first, Oscar accepts it, then real app implements it. Mock data is not a contract.</p>
+<p><b>Oscar is the client</b>, not a reviewer. He doesn't write code, rarely reads diffs; he accepts or rejects product he can try. You own correctness end to end. "Done": he can try it, with evidence, without reading code. Plain product language. He chats in Vietnamese; repo is English.</p>
 </section>
 <section id="direction">
-  <h2>Where it is going</h2>
-  <p><span class="tag">agreed with Oscar 2026-10-26 · replaces the 2026-10-14…20 company plan</span> A slice becomes decision when it merges; until then decisions below stay in force.</p>
-  <h3>The daily Hermes app (#836)</h3>
-  <ul>
-    <li>LilOS is the <b>best daily app for Hermes</b>, Mac and iPhone: threads by project, Needs you, one composer with model + effort. Only Oscar uses it for now; work for other users (App Review, site, onboarding) waits.</li>
-    <li>Coding goes to real coding agents: Hermes hands a job to Claude Code, Cursor, Devin or Antigravity with Oscar's stored model + effort (<a href="#d-835">D-#835</a>, #842).</li>
-    <li><b>Paused, not deleted</b>: the AI company (CEO, tickets, goals, People, Hire; #746) behind one flag (<a href="#d-836">D-#836</a>); runtimes beyond Hermes through one shared ACP mapping (#111, #764). Outside bots stay connectors (CLI or MCP); contracts never name a provider.</li>
-    <li>Prototype: <code>packages/ui/src/v3</code> at <code>localhost:5173</code>; <code>?company=1</code> shows the paused layer.</li>
-  </ul>
+<h2>Where it is going</h2>
+<p><span class="tag">agreed with Oscar 2026-10-26 · replaces the 2026-10-14…20 company plan</span> A slice becomes decision when it merges; until then decisions below stay in force.</p>
+<h3>The daily Hermes app (#836)</h3>
+<ul>
+<li>LilOS is the <b>best daily app for Hermes</b>, Mac and iPhone: threads by project, Needs you, one composer with model + effort. Only Oscar uses it for now; work for other users (App Review, site, onboarding) waits.</li>
+<li>Coding goes to real coding agents: Hermes hands a job to Claude Code, Cursor, Devin or Antigravity with Oscar's stored model + effort (<a href="#d-835">D-#835</a>, #842).</li>
+<li><b>Paused, not deleted</b>: the AI company (CEO, tickets, goals, People, Hire; #746) behind one flag (<a href="#d-836">D-#836</a>); runtimes beyond Hermes through one shared ACP mapping (#111, #764). Outside bots stay connectors (CLI or MCP); contracts never name a provider.</li>
+<li>Prototype: <code>packages/ui/src/v3</code> at <code>localhost:5173</code>; <code>?company=1</code> shows the paused layer.</li>
+</ul>
 </section>
 <section id="map">
-  <h2>Repo map</h2>
-  <p>Start at each package entry.</p>
-  <table>
-    <thead><tr><th>Path</th><th>What</th></tr></thead>
-    <tbody>
-      <tr><td><code>prototype/web</code>, <code>prototype/mobile</code></td><td>Prototypes, UI source of truth: <code>packages/ui</code>(<code>-native</code>) + mock data + fake engine</td></tr>
-      <tr><td><code>apps/web</code></td><td>Real app (React); desktop loads its build</td></tr>
-      <tr><td><code>apps/desktop</code></td><td>Electron shell: window chrome, launchd services, auto-update, LilOS Browser</td></tr>
-      <tr><td><code>apps/relay</code></td><td>Company state (SQLite), fan-out over JSON-RPC/WebSocket; phone pairing, push</td></tr>
-      <tr><td><code>apps/harness</code></td><td>Supervises engine, binds threads to sessions, serves host calls, gateway</td></tr>
-      <tr><td><code>apps/mobile</code></td><td>iPhone (Expo): <code>ui-native</code> over <code>client-runtime</code>; offline demo</td></tr>
-      <tr><td><code>apps/lilos</code></td><td><code>lilos</code> CLI agents call (from <code>packages/surfaces</code>)</td></tr>
-      <tr><td><code>packages/contracts</code></td><td>Zod schemas for boundary crossings, agent tool catalog</td></tr>
-      <tr><td><code>packages/client-runtime</code></td><td>Apps' wire model: connection supervisor, caches, status wording</td></tr>
-      <tr><td><code>packages/ui</code>, <code>packages/ui-native</code></td><td>UI components (web / React Native); props in, callbacks out</td></tr>
-      <tr><td><code>packages/engine-hermes</code>, <code>packages/engine-fake</code></td><td>Adapters: real Hermes, CI's deterministic fake</td></tr>
-      <tr><td><code>packages/engine-conformance</code></td><td>Suite engine adapters must pass</td></tr>
-      <tr><td><code>packages/surfaces</code></td><td>Agent gateway: MCP server, <code>lilos</code> CLI, terminal, browser, guide pages</td></tr>
-      <tr><td><code>packages/host</code></td><td>fs, git, forge (<code>gh</code>), checkpoints, os reads on session machine</td></tr>
-      <tr><td><code>packages/background</code></td><td>launchd registration, wake detection, orphan watchdog</td></tr>
-      <tr><td><code>e2e/</code>, <code>scripts/</code>, <code>site/</code></td><td>Playwright E2E · CI, release, live-check scripts · landing + privacy pages</td></tr>
-      <tr><td><code>.agents/skills/</code></td><td>Test desktop app, iOS simulator, web dev stack on this Mac</td></tr>
-    </tbody>
-  </table>
-  <p><code>bun install</code> · <code>bun run prototype:dev</code> → <code>localhost:5173</code> · <code>bun run verify</code> (Biome, typecheck, unit tests, builds, E2E; <code>verify:fast</code> skips E2E) · <code>bun run app:local</code> builds, runs Mac app on real Hermes · <code>bun run mobile:release</code> ships TestFlight · <code>bun run live:hermes</code>: conformance on Hermes. Headers say what they need.</p>
-  <p><b>Structure</b> (<a href="#d-3-10">D-#3</a> deps, boundary types, <a href="#d-3-4">D-#3</a> Bun-only APIs, <a href="#d-26">D-#26</a> who talks to engine). Feature folders; split past ~400 lines. Biome skips <code>prototype/web/src</code>, <code>site/</code>, vendored shadcn/AI Elements. Flaky Playwright test gets its own issue.</p>
+<h2>Repo map</h2>
+<p>Start at each package entry.</p>
+<table>
+<thead><tr><th>Path</th><th>What</th></tr></thead>
+<tbody>
+<tr><td><code>prototype/web</code>, <code>prototype/mobile</code></td><td>Prototypes, UI source of truth: <code>packages/ui</code>(<code>-native</code>) + mock data + fake engine</td></tr>
+<tr><td><code>apps/web</code></td><td>Real app (React); desktop loads its build</td></tr>
+<tr><td><code>apps/desktop</code></td><td>Electron shell: window chrome, launchd services, auto-update, LilOS Browser</td></tr>
+<tr><td><code>apps/relay</code></td><td>Company state (SQLite), fan-out over JSON-RPC/WebSocket; phone pairing, push</td></tr>
+<tr><td><code>apps/harness</code></td><td>Supervises engine, binds threads to sessions, serves host calls, gateway</td></tr>
+<tr><td><code>apps/mobile</code></td><td>iPhone (Expo): <code>ui-native</code> over <code>client-runtime</code>; offline demo</td></tr>
+<tr><td><code>apps/lilos</code></td><td><code>lilos</code> CLI agents call (from <code>packages/surfaces</code>)</td></tr>
+<tr><td><code>packages/contracts</code></td><td>Zod schemas for boundary crossings, agent tool catalog</td></tr>
+<tr><td><code>packages/client-runtime</code></td><td>Apps' wire model: connection supervisor, caches, status wording</td></tr>
+<tr><td><code>packages/ui</code>, <code>packages/ui-native</code></td><td>UI components (web / React Native); props in, callbacks out</td></tr>
+<tr><td><code>packages/engine-hermes</code>, <code>packages/engine-fake</code></td><td>Adapters: real Hermes, CI's deterministic fake</td></tr>
+<tr><td><code>packages/engine-conformance</code></td><td>Suite engine adapters must pass</td></tr>
+<tr><td><code>packages/surfaces</code></td><td>Agent gateway: MCP server, <code>lilos</code> CLI, terminal, browser, guide pages</td></tr>
+<tr><td><code>packages/host</code></td><td>fs, git, forge (<code>gh</code>), checkpoints, os reads on session machine</td></tr>
+<tr><td><code>packages/background</code></td><td>launchd registration, wake detection, orphan watchdog</td></tr>
+<tr><td><code>e2e/</code>, <code>scripts/</code>, <code>site/</code></td><td>Playwright E2E · CI, release, live-check scripts · landing + privacy pages</td></tr>
+<tr><td><code>.agents/skills/</code></td><td>Test desktop app, iOS simulator, web dev stack on this Mac</td></tr>
+</tbody>
+</table>
+<p><code>bun install</code> · <code>bun run prototype:dev</code> → <code>localhost:5173</code> · <code>bun run verify</code> (Biome, typecheck, unit tests, builds, E2E; <code>verify:fast</code> skips E2E) · <code>bun run app:local</code> builds, runs Mac app on real Hermes · <code>bun run mobile:release</code> ships TestFlight · <code>bun run live:hermes</code>: conformance on Hermes. Headers say what they need.</p>
+<p><b>Structure</b> (<a href="#d-3-10">D-#3</a> deps, boundary types, <a href="#d-3-4">D-#3</a> Bun-only APIs, <a href="#d-26">D-#26</a> who talks to engine). Feature folders; split past ~400 lines. Biome skips <code>prototype/web/src</code>, <code>site/</code>, vendored shadcn/AI Elements. Flaky Playwright test gets its own issue.</p>
 </section>
 
 <section id="architecture">
-  <h2>How pieces fit</h2>
+<h2>How pieces fit</h2>
 <pre><code>apps/web · desktop · mobile   what Oscar sees
   │  JSON-RPC over WebSocket (install token; phones: paired credential)
 apps/relay                    SQLite: employees, channels, messages, asks
@@ -101,70 +101,70 @@ apps/relay                    SQLite: employees, channels, messages, asks
 apps/harness                  threads↔sessions · feed · POST /host · gateway
   │  engine protocol (JSON-RPC, ACP-shaped, seq events)
 packages/engine-*             adapter owning an engine</code></pre>
-  <ul>
-    <li>Clients write only via relay, read live engine events from harness feed (Mac) or relay's re-publish (phone). Harness posts final answers, asks back to relay.</li>
-    <li>Agents use LilOS via <b>agent gateway</b>: one catalog (<code>packages/contracts/src/harness/tools.ts</code>) as MCP, <code>lilos</code> CLI, Hermes plugin. Scope: calling session.</li>
-    <li>Engine start failures, plain-language status: harness launcher, <code>packages/client-runtime/src/status.ts</code>. Min Hermes version: <code>MIN_HERMES_VERSION</code> in <code>packages/engine-hermes/src/version.ts</code>.</li>
-  </ul>
+<ul>
+<li>Clients write only via relay, read live engine events from harness feed (Mac) or relay's re-publish (phone). Harness posts final answers, asks back to relay.</li>
+<li>Agents use LilOS via <b>agent gateway</b>: one catalog (<code>packages/contracts/src/harness/tools.ts</code>) as MCP, <code>lilos</code> CLI, Hermes plugin. Scope: calling session.</li>
+<li>Engine start failures, plain-language status: harness launcher, <code>packages/client-runtime/src/status.ts</code>. Min Hermes version: <code>MIN_HERMES_VERSION</code> in <code>packages/engine-hermes/src/version.ts</code>.</li>
+</ul>
 </section>
 
 <section id="work">
-  <h2>How work happens</h2>
+<h2>How work happens</h2>
 
-  <h3 id="tracking">GitHub issues are source of truth</h3>
-  <ul>
-    <li><code>Nuncio-hq/LilOS</code> via <code>gh</code>. <b>feature</b> is parent issue with product outcome; sub-issues are vertical slices.</li>
-    <li><b>Modules</b>: each open issue is a module's sub-issue (its board card's <b>Module</b> field); slots swap or empty, the rest still work: Core (#756: company, projects, threads, agents, tickets, Needs you, <code>lilos_*</code> tools) · Runtimes (#757: Hermes now, others via ACP; models per agent) · Connectors (#758: outside services via CLI or MCP, zero or many) · Mac tools (#759: browser, terminal, Workbench, checkpoints) · Quality (#760: speed, flaky tests, refactors, a11y, iOS upkeep).</li>
-    <li><b>Labels</b>, only these: <code>agent-ready</code> (criteria + verify plan; anyone may take it; blocked slice gets it when its blocker merges), <code>later</code> (parked), <code>needs-human</code> (waiting on Oscar).</li>
-    <li><b>Pick</b> open <code>agent-ready</code> slices with no PR (<code>label:agent-ready -linked:pr</code>); finish feature's slices before another.</li>
-    <li><b>Take it</b>: remove <code>agent-ready</code>, assign yourself, open <b>draft</b> PR with <code>Closes #N</code> early; mark it ready when tier's checks pass (E2E only on ready PRs). One slice at a time; stuck → <code>needs-human</code>. One <code>Status</code> comment (Now / Next / Blocked), edited in place. <code>git commit -s</code>.</li>
-    <li><b>Done</b>: merged PR closes slice; last slice closes feature. Then check "LilOS" board card is Done; if not, move it (<code>gh project item-edit</code>).</li>
-    <li>Work outside slice → new issue; don't widen PR.</li>
-  </ul>
+<h3 id="tracking">GitHub issues are source of truth</h3>
+<ul>
+<li><code>Nuncio-hq/LilOS</code> via <code>gh</code>. <b>feature</b> is parent issue with product outcome; sub-issues are vertical slices.</li>
+<li><b>Modules</b>: each open issue is a module's sub-issue (its board card's <b>Module</b> field); slots swap or empty, the rest still work: Core (#756: company, projects, threads, agents, tickets, Needs you, <code>lilos_*</code> tools) · Runtimes (#757: Hermes now, others via ACP; models per agent) · Connectors (#758: outside services via CLI or MCP, zero or many) · Mac tools (#759: browser, terminal, Workbench, checkpoints) · Quality (#760: speed, flaky tests, refactors, a11y, iOS upkeep).</li>
+<li><b>Labels</b>, only these: <code>agent-ready</code> (criteria + verify plan; anyone may take it; blocked slice gets it when its blocker merges), <code>later</code> (parked), <code>needs-human</code> (waiting on Oscar).</li>
+<li><b>Pick</b> open <code>agent-ready</code> slices with no PR (<code>label:agent-ready -linked:pr</code>); finish feature's slices before another.</li>
+<li><b>Take it</b>: remove <code>agent-ready</code>, assign yourself, open <b>draft</b> PR with <code>Closes #N</code> early; mark it ready when tier's checks pass (E2E only on ready PRs). One slice at a time; stuck → <code>needs-human</code>. One <code>Status</code> comment (Now / Next / Blocked), edited in place. <code>git commit -s</code>.</li>
+<li><b>Done</b>: merged PR closes slice; last slice closes feature. Then check "LilOS" board card is Done; if not, move it (<code>gh project item-edit</code>).</li>
+<li>Work outside slice → new issue; don't widen PR.</li>
+</ul>
 
-  <h3 id="verify">Verify: pick tier, state it in PR</h3>
-  <table>
-    <thead><tr><th>Tier</th><th>When</th><th>Steps</th></tr></thead>
-    <tbody>
-      <tr><td><b>Small</b></td><td>typo, copy, docs, comments, config with no behavior change</td><td>change → build if code was touched → PR with one-line note; issue optional</td></tr>
-      <tr><td><b>Prototype</b></td><td>UX in <code>prototype/*</code> + <code>ui</code>/<code>ui-native</code> parts it shows</td><td>issue → build → typecheck + lint → look at it → PR with screenshots; no tests</td></tr>
-      <tr><td><b>Normal</b></td><td>anything user can see, any behavior change, anything on engine/protocol seam</td><td>the 7 steps</td></tr>
-    </tbody>
-  </table>
-  <p>Unsure → Normal. <b>1 Understand</b>: criteria are what the user sees; ask Oscar only when ambiguous. <b>2 Plan</b> in the <code>Status</code> comment; split slices too big for one PR. <b>3 Implement</b>: a failing test turns green. <b>4 Verify</b>: <code>bun run verify</code>, one screenshot each, one real agent call per new tool. <b>5 Review</b>: a fresh-context agent, product first; fix what it finds. <b>6 Document</b>: comments where the rule lives, this page if stale. <b>7 Hand off</b>: a PR note Oscar can act on: how to try it, criteria + screenshots, what's not done, <code>Closes #N</code>. Oscar only does step 7.</p>
+<h3 id="verify">Verify: pick tier, state it in PR</h3>
+<table>
+<thead><tr><th>Tier</th><th>When</th><th>Steps</th></tr></thead>
+<tbody>
+<tr><td><b>Small</b></td><td>typo, copy, docs, comments, config with no behavior change</td><td>change → build if code was touched → PR with one-line note; issue optional</td></tr>
+<tr><td><b>Prototype</b></td><td>UX in <code>prototype/*</code> + <code>ui</code>/<code>ui-native</code> parts it shows</td><td>issue → build → typecheck + lint → look at it → PR with screenshots; no tests</td></tr>
+<tr><td><b>Normal</b></td><td>anything user can see, any behavior change, anything on engine/protocol seam</td><td>the 7 steps</td></tr>
+</tbody>
+</table>
+<p>Unsure → Normal. <b>1 Understand</b>: criteria are what the user sees; ask Oscar only when ambiguous. <b>2 Plan</b> in the <code>Status</code> comment; split slices too big for one PR. <b>3 Implement</b>: a failing test turns green. <b>4 Verify</b>: <code>bun run verify</code>, one screenshot each, one real agent call per new tool. <b>5 Review</b>: a fresh-context agent, product first; fix what it finds. <b>6 Document</b>: comments where the rule lives, this page if stale. <b>7 Hand off</b>: a PR note Oscar can act on: how to try it, criteria + screenshots, what's not done, <code>Closes #N</code>. Oscar only does step 7.</p>
 
-  <h3 id="gateway-rule">Every feature ships its agent tools</h3>
-  <ul>
-    <li>Agents must use whatever Oscar can: feature is done only when they can too. Feature issues have <b>Agent tools</b> section; PRs show one real agent call per new tool.</li>
-    <li>Tools, once in <code>packages/contracts/src/harness/tools.ts</code> as <code>&lt;area&gt;_&lt;action&gt;</code> (seen as <code>lilos_thread_read</code>). New <code>AppMethod</code> or user-visible action adds its tool or <code>NOT_AGENT_FACING</code> reason (<code>packages/contracts/src/harness/coverage.ts</code>); test enforces it.</li>
-    <li>Changing company is <code>approval</code> tool (<a href="#d-341">D-#341</a>). Scope comes from session, never agent-passed id. Agents use LilOS surfaces, not engine's browser.</li>
-  </ul>
+<h3 id="gateway-rule">Every feature ships its agent tools</h3>
+<ul>
+<li>Agents must use whatever Oscar can: feature is done only when they can too. Feature issues have <b>Agent tools</b> section; PRs show one real agent call per new tool.</li>
+<li>Tools, once in <code>packages/contracts/src/harness/tools.ts</code> as <code>&lt;area&gt;_&lt;action&gt;</code> (seen as <code>lilos_thread_read</code>). New <code>AppMethod</code> or user-visible action adds its tool or <code>NOT_AGENT_FACING</code> reason (<code>packages/contracts/src/harness/coverage.ts</code>); test enforces it.</li>
+<li>Changing company is <code>approval</code> tool (<a href="#d-341">D-#341</a>). Scope comes from session, never agent-passed id. Agents use LilOS surfaces, not engine's browser.</li>
+</ul>
 
-  <h3 id="docs-rules">Docs, decisions</h3>
-  <ul>
-    <li><b>The code is the documentation.</b> Why is a comment at the rule; this page keeps one line per decision pointing there. Change behavior, update that comment in same PR.</li>
-    <li><b>Two documents</b>: <code>AGENTS.md</code> (short, auto-loaded; <code>CLAUDE.md</code> links to it), this page. Other Markdown only where tool needs it: README, CONTRIBUTING, SECURITY, issue templates, LICENSE, notices, skills. Plans, logs, research go in issues, PRs. <code>packages/contracts/test/docs.test.ts</code> enforces this.</li>
-    <li><b>A decision needs an issue and a merged PR.</b> Chat, brainstorm or old doc, without both, was never implemented: open issue, don't build on it. Record only what later agent could undo by accident: architecture, protocol, data ownership, stack.</li>
-    <li><b>Format</b>: one <code>&lt;li id="d-N"&gt;</code> (another for same issue: <code>d-N-2</code>): rule, <code>Not:</code> what was rejected, refs, file(s) whose <code>D-#N</code> comment holds detail. Add it in that PR. Supersede by rewriting in place; old choice becomes <code>Not: … (was #old)</code>. Delete decision no longer in force, its tags.</li>
-  </ul>
+<h3 id="docs-rules">Docs, decisions</h3>
+<ul>
+<li><b>The code is the documentation.</b> Why is a comment at the rule; this page keeps one line per decision pointing there. Change behavior, update that comment in same PR.</li>
+<li><b>Two documents</b>: <code>AGENTS.md</code> (short, auto-loaded; <code>CLAUDE.md</code> links to it), this page. Other Markdown only where tool needs it: README, CONTRIBUTING, SECURITY, issue templates, LICENSE, notices, skills. Plans, logs, research go in issues, PRs. <code>packages/contracts/test/docs.test.ts</code> enforces this.</li>
+<li><b>A decision needs an issue and a merged PR.</b> Chat, brainstorm or old doc, without both, was never implemented: open issue, don't build on it. Record only what later agent could undo by accident: architecture, protocol, data ownership, stack.</li>
+<li><b>Format</b>: one <code>&lt;li id="d-N"&gt;</code> (another for same issue: <code>d-N-2</code>): rule, <code>Not:</code> what was rejected, refs, file(s) whose <code>D-#N</code> comment holds detail. Add it in that PR. Supersede by rewriting in place; old choice becomes <code>Not: … (was #old)</code>. Delete decision no longer in force, its tags.</li>
+</ul>
 
-  <h3 id="learn">Learn from these projects</h3>
-  <p>Read how these solve seam, cite files in issue. All MIT: port ideas or code; attribute them; never their frameworks (T3, Synara use Effect-TS).</p>
-  <table>
-    <thead><tr><th>Project</th><th>Borrow</th><th>Start at</th></tr></thead>
-    <tbody>
-      <tr><td>T3 Code <code>pingdotgg/t3code</code></td><td>client/server split, seq sync (snapshot + replay), provider adapters + capabilities, thread sidebar (pin, settle, snooze), one shared ACP adapter, pinned generated schema</td><td><code>docs/internals/adding-a-provider.md</code>, <code>packages/provider-core/src/server/ProviderAdapter.ts</code>, <code>docs/user/thread-sidebar.md</code>, <code>packages/provider-acp/src/server/adapter.ts</code></td></tr>
-      <tr><td>Synara <code>Emanuele-web04/synara</code></td><td>ACP adapter, conformance tests, mock agents, gateway (per-engine MCP injection, versioned host policy)</td><td><code>apps/server/src/provider/acp/</code>, <code>apps/server/src/provider/providerAdapterConformance.ts</code>, <code>apps/server/src/agentGateway/</code></td></tr>
-      <tr><td>Hermes Desktop <code>NousResearch/hermes-agent</code></td><td>renderer over headless engine, JSON-RPC client, reconnect replay, wire contract once</td><td><code>apps/shared/src/json-rpc-gateway.ts</code>, <code>tui_gateway/contracts/</code>, <code>scripts/gen_gateway_contracts.py</code></td></tr>
-      <tr><td>Paperclip <code>paperclipai/paperclip</code></td><td>one-assignee tickets, atomic checkout, heartbeats, one adapter per runtime; CEO as position; company-owned agent files, skill library</td><td><code>doc/SPEC.md</code> (§3 org, §4 heartbeats, §5 tasks, §8 atomic checkout), <code>doc/GOAL.md</code>, <code>packages/adapters/</code>, <code>doc/agent-files.md</code>, <code>doc/memory-landscape.md</code></td></tr>
-    </tbody>
-  </table>
+<h3 id="learn">Learn from these projects</h3>
+<p>Read how these solve seam, cite files in issue. All MIT: port ideas or code; attribute them; never their frameworks (T3, Synara use Effect-TS).</p>
+<table>
+<thead><tr><th>Project</th><th>Borrow</th><th>Start at</th></tr></thead>
+<tbody>
+<tr><td>T3 Code <code>pingdotgg/t3code</code></td><td>client/server split, seq sync (snapshot + replay), provider adapters + capabilities, thread sidebar (pin, settle, snooze), one shared ACP adapter, pinned generated schema</td><td><code>docs/internals/adding-a-provider.md</code>, <code>packages/provider-core/src/server/ProviderAdapter.ts</code>, <code>docs/user/thread-sidebar.md</code>, <code>packages/provider-acp/src/server/adapter.ts</code></td></tr>
+<tr><td>Synara <code>Emanuele-web04/synara</code></td><td>ACP adapter, conformance tests, mock agents, gateway (per-engine MCP injection, versioned host policy)</td><td><code>apps/server/src/provider/acp/</code>, <code>apps/server/src/provider/providerAdapterConformance.ts</code>, <code>apps/server/src/agentGateway/</code></td></tr>
+<tr><td>Hermes Desktop <code>NousResearch/hermes-agent</code></td><td>renderer over headless engine, JSON-RPC client, reconnect replay, wire contract once</td><td><code>apps/shared/src/json-rpc-gateway.ts</code>, <code>tui_gateway/contracts/</code>, <code>scripts/gen_gateway_contracts.py</code></td></tr>
+<tr><td>Paperclip <code>paperclipai/paperclip</code></td><td>one-assignee tickets, atomic checkout, heartbeats, one adapter per runtime; CEO as position; company-owned agent files, skill library</td><td><code>doc/SPEC.md</code> (§3 org, §4 heartbeats, §5 tasks, §8 atomic checkout), <code>doc/GOAL.md</code>, <code>packages/adapters/</code>, <code>doc/agent-files.md</code>, <code>doc/memory-landscape.md</code></td></tr>
+</tbody>
+</table>
 </section>
 
 <section id="decisions">
-  <h2>Decisions in force</h2>
-  <p>One line each: rule, <span class="not">what was rejected</span>, issue, file whose <code>D-#N</code> comment has details. History stays in issues.</p>
-  <p><label for="decision-filter">Filter</label><br><input id="decision-filter" type="search" placeholder="relay, D-#85, rewind"></p>
+<h2>Decisions in force</h2>
+<p>One line each: rule, <span class="not">what was rejected</span>, issue, file whose <code>D-#N</code> comment has details. History stays in issues.</p>
+<p><label for="decision-filter">Filter</label><br><input id="decision-filter" type="search" placeholder="relay, D-#85, rewind"></p>
 <h3 id="decisions-product">Product & repo</h3>
 <ul class="decisions">
 <li id="d-172"><b>D-#172</b> Source-available: Elastic License 2.0 (licensor Nuncio, SPDX <code>Elastic-2.0</code> per package): free use, fork, self-host, at work too; never resold as hosted service. <em>Not: PolyForm NC (bans work use), BSL (auto-converts), MIT (allows resale).</em> <small>#172</small> <kbd>packages/contracts/test/repo-hygiene.test.ts</kbd></li>
@@ -297,7 +297,7 @@ packages/engine-*             adapter owning an engine</code></pre>
 <li id="d-844"><b>D-#844</b> <code>task_*</code>: a task is a ticket; the child thread gets only its prompt; finishes coalesce into one fenced parent wake; a cancel never wakes. <em>Not: a jobs table, approval to create.</em> <small>#844</small> <kbd>apps/relay/src/session/tasks.ts</kbd></li>
 <li id="d-848"><b>D-#848</b> A git caller's <code>task_create</code> child gets a HEAD worktree by default (#156 intent); <code>"shared"</code> shares the folder. <em>Not: copying uncommitted edits, auto-merge.</em> <small>#848</small> <kbd>apps/harness/src/harness/task-isolation.ts</kbd></li>
 <li id="d-761"><b>D-#761</b> Engine per runtime (<code>Employee.runtime</code>): lazy start, adapter+failure gates, runtime::session refs. <em>Not: shared engine, retry loops.</em> <small>#761</small> <kbd>apps/harness/src/engine/registry.ts</kbd></li>
-<li id="d-899"><b>D-#899</b> Boot asks an idle runtime nothing (refines D-#866), but opening a runtime agent's screen — new chat, its thread, its agent page — asks that runtime's catalog and profile once, lazy-starting it; the chip reads "Loading models…", then "Models unavailable" + Retry on refusal, never "Engine default". <em>Not: first turn as the wake, the default engine's list as placeholder.</em> <small>#899 · #872 · #895</small> <kbd>apps/web/src/v3/runtimes.ts</kbd></li>
+<li id="d-899"><b>D-#899</b> Boot asks idle runtimes nothing; opening a runtime agent's chat, thread or page asks its catalog + profile, lazy-starting it. Chips read "Loading models…", then its list or "Models unavailable" + Retry. <em>Not: "Engine default", the default engine's list.</em> <small>#899</small> <kbd>apps/web/src/v3/runtimes.ts</kbd></li>
 <li id="d-847"><b>D-#847</b> A helper is a thread with <code>parentId</code>: no list row, shown on its parent; waiting parents read Working; parent Stop ends only its turn. <em>Not: helper rows, a stop cascade.</em> <small>#847</small> <kbd>packages/ui/src/v3/v3-model.ts</kbd></li>
 <li id="d-862"><b>D-#862</b> Pin/settle ("Done")/snooze are relay state; <code>archived</code> mirrors settled; a sweep settles 3-day-idle or merged-PR threads, never pinned, snoozed, helpers. <em>Not: client stamps, agent tools.</em> <small>#862</small> <kbd>apps/relay/src/sweep.ts</kbd></li>
 <li id="d-881"><b>D-#881</b> A settled thread's <code>.lilos/wt</code> copy goes back on its settle — removed only clean (ignored files count), HEAD pushed-or-merged, and unshared; <code>-d</code> merged, <code>-D</code> at the PR head; one quiet line; un-settle restores. <em>Not: force-removal, an agent tool.</em> <small>#881</small> <kbd>apps/harness/src/harness/worktree-cleanup.ts</kbd></li>
@@ -312,35 +312,35 @@ packages/engine-*             adapter owning an engine</code></pre>
 </section>
 
 <section id="app-review">
-  <h2>App Review notes (TestFlight beta)</h2>
-  <p>Paste into App Store Connect when a build goes to review; the demo it describes lives in <code>apps/mobile/src/demo</code>.</p>
-  <div class="box">
-    <p><b>What the app is.</b> LilOS is the phone companion for <b>LilOS on the Mac</b>: a Slack-style app where the "employees" are AI agents that run on the user's own Mac. The iPhone app is a client of that Mac — it pairs to the Mac app over a QR code and then works against it (read threads, steer agents, approve or deny their tool calls, watch background jobs).</p>
-    <p><b>How to review it — no Mac, no account required.</b> Launch the app → Welcome → tap <b>"Try the demo"</b> (under "Connect your Mac"): a scripted, fully offline demo company where every screen works — threads stream replies, approvals can be allowed or denied, plans, subagents, jobs, settings. A <b>Demo</b> badge floats on every screen; leave via Settings → <b>Exit demo</b>. It never opens a network connection — Airplane Mode works.</p>
-    <p><b>Privacy:</b> <a href="https://nuncio-hq.github.io/lilos-site/privacy/">nuncio-hq.github.io/lilos-site/privacy/</a></p>
-    <p><b>What to Test:</b> LilOS is the phone client for AI employees running on your Mac. Tap "Try the demo" to explore every screen offline — no account or Mac needed.</p>
-  </div>
+<h2>App Review notes (TestFlight beta)</h2>
+<p>Paste into App Store Connect when a build goes to review; the demo it describes lives in <code>apps/mobile/src/demo</code>.</p>
+<div class="box">
+<p><b>What the app is.</b> LilOS is the phone companion for <b>LilOS on the Mac</b>: a Slack-style app where the "employees" are AI agents that run on the user's own Mac. The iPhone app is a client of that Mac — it pairs to the Mac app over a QR code and then works against it (read threads, steer agents, approve or deny their tool calls, watch background jobs).</p>
+<p><b>How to review it — no Mac, no account required.</b> Launch the app → Welcome → tap <b>"Try the demo"</b> (under "Connect your Mac"): a scripted, fully offline demo company where every screen works — threads stream replies, approvals can be allowed or denied, plans, subagents, jobs, settings. A <b>Demo</b> badge floats on every screen; leave via Settings → <b>Exit demo</b>. It never opens a network connection — Airplane Mode works.</p>
+<p><b>Privacy:</b> <a href="https://nuncio-hq.github.io/lilos-site/privacy/">nuncio-hq.github.io/lilos-site/privacy/</a></p>
+<p><b>What to Test:</b> LilOS is the phone client for AI employees running on your Mac. Tap "Try the demo" to explore every screen offline — no account or Mac needed.</p>
+</div>
 </section>
 </main>
 </div>
 <script>
-  /* Browser-only. Source stays plain for agents. #N, kbd link; filter narrows list. */
-  const repo = "https://github.com/Nuncio-hq/LilOS";
-  for (const el of document.querySelectorAll("ul.decisions small, #direction h3, #direction li, #tracking li")) {
-    el.innerHTML = el.innerHTML.replace(/(^|[^#\w-])#(\d+)/g, `$1<a href="${repo}/issues/$2">#$2</a>`);
-  }
-  for (const el of document.querySelectorAll("ul.decisions kbd")) {
-    const a = document.createElement("a");
-    a.href = `${repo}/blob/main/${el.textContent}`;
-    el.replaceWith(a);
-    a.append(el);
-  }
-  const input = document.getElementById("decision-filter");
-  const items = document.querySelectorAll("ul.decisions li");
-  input.addEventListener("input", () => {
-    const q = input.value.trim().toLowerCase();
-    for (const li of items) li.hidden = q !== "" && !li.textContent.toLowerCase().includes(q);
-  });
+/* Browser-only. Source stays plain for agents. #N, kbd link; filter narrows list. */
+const repo = "https://github.com/Nuncio-hq/LilOS";
+for (const el of document.querySelectorAll("ul.decisions small, #direction h3, #direction li, #tracking li")) {
+el.innerHTML = el.innerHTML.replace(/(^|[^#\w-])#(\d+)/g, `$1<a href="${repo}/issues/$2">#$2</a>`);
+}
+for (const el of document.querySelectorAll("ul.decisions kbd")) {
+const a = document.createElement("a");
+a.href = `${repo}/blob/main/${el.textContent}`;
+el.replaceWith(a);
+a.append(el);
+}
+const input = document.getElementById("decision-filter");
+const items = document.querySelectorAll("ul.decisions li");
+input.addEventListener("input", () => {
+const q = input.value.trim().toLowerCase();
+for (const li of items) li.hidden = q !== "" && !li.textContent.toLowerCase().includes(q);
+});
 </script>
 </body>
 </html>

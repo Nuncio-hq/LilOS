@@ -1035,8 +1035,8 @@ describe("engine-hermes #8: agents + models capabilities", () => {
       models: { id: string; efforts?: string[]; defaultEffort?: string }[];
     };
     /* The chip names what turns run with: `default` is the gateway's own
-       model, and every reasoning row names the configured
-       agent.reasoning_effort ("high" in the fake). */
+       model, and every reasoning row names `config.get reasoning`
+       ("high" in the fake). */
     expect(r.default).toBe("stub-model-a");
     const reasoning = r.models.filter((m) => m.efforts?.length);
     expect(reasoning.length).toBeGreaterThan(0);

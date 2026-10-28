@@ -279,13 +279,15 @@ export async function listModels(
     provider?: unknown;
   };
   /* #899: the effort chip names the level turns actually run with — the
-     gateway's configured `agent.reasoning_effort`, read the same way
-     describe reads approvals.mode (a refused read on an older build just
-     means "no default to report", never a failed list). */
+     gateway's `config.get reasoning` (tui_gateway `_cfg_get_reasoning`:
+     the configured `agent.reasoning_effort`, "medium" when unset, "none"
+     when thinking is off). There is no `agent.reasoning_effort` key — the
+     gateway answers 4002 for it. A refused read on an older build just
+     means "no default to report", never a failed list. */
   let configuredEffort: string | undefined;
   try {
     const cfg = (await gw.request("config.get", {
-      key: "agent.reasoning_effort",
+      key: "reasoning",
     })) as { value?: unknown };
     if (typeof cfg?.value === "string" && cfg.value)
       configuredEffort = cfg.value;

@@ -161,10 +161,15 @@ export function ModelChip({
     const choices = !rtKnown ? [] : own ? (rt.models ?? []) : data.modelChoices;
     /* #899: the screen's own ask is in flight or refused — the chip says
        "Loading models…" / "Models unavailable" (click retries), never a
-       model this runtime never named. `catalogState` absent means no ask
-       fired (a host without the action) — the static label stays. */
-    if (own && choices.length === 0 && rt.catalogState) {
-      if (rt.catalogState === "failed")
+       model this runtime never named. A host that asks (`openRuntimeScreen`)
+       spins until the catalog lands — the first frame, before the effect's
+       ask, must not flash the fallback label; a host without the action
+       keeps the static label. */
+    const asking =
+      rt?.catalogState ??
+      (act.openRuntimeScreen && !rt?.catalogLanded ? "loading" : undefined);
+    if (own && choices.length === 0 && asking) {
+      if (asking === "failed")
         return (
           <button
             type="button"

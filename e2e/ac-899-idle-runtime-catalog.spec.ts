@@ -318,6 +318,10 @@ test("opening Devin's agent page asks the same way; Default model lands (AC-6)",
      "Engine default". */
   await expect(peek(page)).toContainText("SWE-2 High", { timeout: 30_000 });
   await expect(peek(page)).not.toContainText("Engine default");
+  /* The unpinned effort names the level turns run with, not a bare
+     "Model default". */
+  await expect(peek(page)).toContainText("Max (default)");
+  await expect(peek(page)).not.toContainText("Model default");
   await shot(page, "5-agent-loaded");
 });
 

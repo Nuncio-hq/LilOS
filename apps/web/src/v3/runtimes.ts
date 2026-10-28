@@ -42,6 +42,11 @@ const setPhase = (
   runtime: string,
   v?: { state: "loading" | "failed"; detail?: string },
 ) => {
+  /* An unchanged phase writes nothing: the chips' open-effect re-runs on
+     every new runtime row, and a fresh object here would re-render the row,
+     re-run the effect and loop (#899 review). */
+  const cur = catalogPhase.get()[runtime];
+  if (cur?.state === v?.state && cur?.detail === v?.detail) return;
   const next = { ...catalogPhase.get() };
   if (v) next[runtime] = v;
   else delete next[runtime];
@@ -57,7 +62,7 @@ const setPhase = (
    forever (#872). */
 const attempted = new Map<
   string,
-  { key: string; at: number; empty: boolean }
+  { key: string; at: number; empty: boolean; error?: string }
 >();
 const EMPTY_RETRY_MS = 15_000;
 /* Runtimes with an ask in flight: a cold start fires several status and
@@ -99,8 +104,14 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
     last &&
     last.key === key &&
     (!last.empty || Date.now() - last.at < EMPTY_RETRY_MS)
-  )
+  ) {
+    /* #899: a refusal remembered from before the screen opened (a live
+       runtime's sync ask) still owes the screen its "failed" chip —
+       otherwise it would spin "Loading models…" with no ask in flight. */
+    if (last.error !== undefined && screenOpened.has(r.id))
+      setPhase(r.id, { state: "failed", detail: last.error });
     return;
+  }
   inflight.add(r.id);
   /* #899: mark the ask in flight before it leaves — the chips read
      "loading" from the first render after the screen opened. */
@@ -118,12 +129,10 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
     /* The runtime can't answer (not installed, down) — a screen that
        asked gets "failed" with the reason so its chip can offer Retry
        (#899 AC-4); a boot ask just stays an empty catalog. */
-    attempted.set(r.id, { key, at: Date.now(), empty: false });
+    const error = e instanceof Error ? e.message : String(e);
+    attempted.set(r.id, { key, at: Date.now(), empty: false, error });
     if (screenOpened.has(r.id))
-      setPhase(r.id, {
-        state: "failed",
-        detail: e instanceof Error ? e.message : String(e),
-      });
+      setPhase(r.id, { state: "failed", detail: error });
     else setPhase(r.id);
   } finally {
     inflight.delete(r.id);

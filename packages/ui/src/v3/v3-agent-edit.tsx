@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { effortLabel } from "../chat/effort-picker";
 import { cn } from "../lib/utils";
 import { Btn, Prop } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
@@ -299,6 +300,9 @@ export function ModelProp({
    for its model, plus "Model default" which clears the pin (`effort: ""`
    on the record). Saved the moment a pick lands; a runtime that reports
    no levels gets no row at all (the caller checks `ladder`). */
+/** The effort menu's "no pin" row — never a real ladder value. */
+const CLEAR_EFFORT = "\u0000default";
+
 export function EffortProp({
   icon,
   agent,
@@ -311,7 +315,14 @@ export function EffortProp({
   ladder: { efforts: string[]; defaultEffort?: string };
   save?: FieldSave;
 }) {
-  const shown = agent.effort ?? "Model default";
+  /* #899: no pin shows the level turns actually run with — the model's
+     reported default ("Max (default)"), never a bare "Model default". The
+     clearing row keeps its own id so a pin equal to the default stays a
+     pin. Only an engine that names no default falls back to the words. */
+  const unpinned = ladder.defaultEffort
+    ? `${effortLabel(ladder.defaultEffort)} (default)`
+    : "Model default";
+  const shown = agent.effort ? effortLabel(agent.effort) : unpinned;
   return (
     <Prop icon={icon} label="Default effort">
       {save ? (
@@ -319,16 +330,19 @@ export function EffortProp({
           below
           title="Default effort"
           ariaLabel="Default effort"
-          value={shown}
+          value={agent.effort ?? CLEAR_EFFORT}
           onPick={(next) => {
-            if (next !== shown)
-              void save.run({ effort: next === "Model default" ? "" : next });
+            if (next !== (agent.effort ?? CLEAR_EFFORT))
+              void save.run({ effort: next === CLEAR_EFFORT ? "" : next });
           }}
           label={<span className="truncate">{shown}</span>}
-          options={["Model default", ...ladder.efforts].map((e) => ({
-            id: e,
-            node: <span>{e}</span>,
-          }))}
+          options={[
+            { id: CLEAR_EFFORT, node: <span>{unpinned}</span> },
+            ...ladder.efforts.map((e) => ({
+              id: e,
+              node: <span>{effortLabel(e)}</span>,
+            })),
+          ]}
         />
       ) : (
         shown
