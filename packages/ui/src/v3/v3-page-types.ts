@@ -124,7 +124,7 @@ export type V3Actions = {
      thread or page mounted): asks that runtime's catalog and profile even
      while the adapter sleeps — the ask is what lazy-starts it. No-op once
      the catalog has landed. */
-  openRuntimeScreen?: (runtime: string) => void;
+  openRuntimeScreen?: (runtime: string) => () => void;
   /** The "Models unavailable" chip's retry — re-asks after a refusal. */
   retryRuntimeCatalog?: (runtime: string) => void;
   /** "New project from a folder…": the app asks for a folder (its own

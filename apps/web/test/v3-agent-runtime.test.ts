@@ -298,7 +298,7 @@ describe("the boot catalog ask", () => {
 /* D-#899: a runtime agent's screen asks the catalog even while its
    adapter sleeps — the ask lazy-starts it — and the row reports the
    in-flight/refused ask for the chip. Each test uses its own runtime id:
-   `screenOpened` is a session-long set, so reusing a row another test
+   the attempt memory is session-long, so reusing a row another test
    already opened would measure its ask. */
 describe("the screen-open ask (D-#899)", () => {
   const asked = (runtime: string) =>
@@ -369,6 +369,84 @@ describe("the screen-open ask (D-#899)", () => {
     expect(asked("acp:gone")).toBe(1);
     retryRuntimeCatalog("acp:gone");
     await vi.waitFor(() => expect(asked("acp:gone")).toBe(2));
+    stop();
+  });
+
+  test("a closed screen never wakes its runtime later; an open one asks once, not on every status change", async () => {
+    const fn = relay.listModels as ReturnType<typeof vi.fn>;
+    const impl = fn.getMockImplementation() as
+      | ((p?: { runtime?: string }) => Promise<ModelsListResult>)
+      | undefined;
+    fn.mockImplementation(async (p?: { runtime?: string }) => {
+      if (p?.runtime === "acp:crashy") throw new Error("adapter exited");
+      return impl?.(p);
+    });
+    employee = { ...devinEmployee(), runtime: "acp:crashy" };
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      { id: "acp:crashy", label: "Devin", available: true, state: "idle" },
+    ]);
+    const stop = runtimeRows().subscribe(() => {});
+    const release = openRuntimeScreen("acp:crashy");
+    await vi.waitFor(() =>
+      expect(row("acp:crashy")?.catalogState).toBe("failed"),
+    );
+    expect(asked("acp:crashy")).toBe(1);
+    /* The engine fails and is returned to idle: the row's verdict changes
+       while the screen is open — no restart loop. */
+    for (const detail of ["exit 1", "exit 2"]) {
+      setRuntimes([
+        { id: "hermes", label: "Hermes" },
+        {
+          id: "acp:crashy",
+          label: "Devin",
+          available: true,
+          state: "idle",
+          detail,
+        },
+      ]);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    expect(asked("acp:crashy")).toBe(1);
+    /* Leaving the screen: a later verdict change asks nothing either. */
+    release();
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      {
+        id: "acp:crashy",
+        label: "Devin",
+        available: true,
+        state: "idle",
+        detail: "exit 3",
+      },
+    ]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(asked("acp:crashy")).toBe(1);
+    if (impl) fn.mockImplementation(impl);
+    stop();
+  });
+
+  test("a screen on a runtime that isn't installed reads failed, never Loading forever", async () => {
+    (relay.listModels as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("devin not on PATH"),
+    );
+    employee = { ...devinEmployee(), runtime: "acp:missing" };
+    setRuntimes([
+      { id: "hermes", label: "Hermes" },
+      {
+        id: "acp:missing",
+        label: "Devin",
+        available: false,
+        detail: "devin not on PATH",
+      },
+    ]);
+    const stop = runtimeRows().subscribe(() => {});
+    const release = openRuntimeScreen("acp:missing");
+    await vi.waitFor(() => {
+      expect(row("acp:missing")?.catalogState).toBe("failed");
+      expect(row("acp:missing")?.catalogDetail).toContain("not on PATH");
+    });
+    release();
     stop();
   });
 });

@@ -156,9 +156,11 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
   /* #899: the agent page IS this runtime's screen — opening it asks the
      catalog (and the profile that fills `updatable`) even while the
      adapter sleeps; the ask is what lazy-starts it. */
-  useEffect(() => {
-    if (rt && !rt.isDefault) act.openRuntimeScreen?.(rt.id);
-  }, [rt, act]);
+  const screenRt = rt && !rt.isDefault ? rt.id : undefined;
+  useEffect(
+    () => (screenRt ? act.openRuntimeScreen?.(screenRt) : undefined),
+    [screenRt, act],
+  );
   const runsOn = outside ? undefined : runtimeLabelOf(data, agent);
   const fields = agentPageFields(data, agent);
   const canDescription = canEdit && fields.includes("description");
@@ -324,7 +326,8 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
             agent={agent}
             choices={modelChoicesOf(data, agent)}
             save={canModel ? modelSave : undefined}
-            rt={rt}
+            /* A host that never asks (the prototype) keeps the text. */
+            rt={act.openRuntimeScreen ? rt : undefined}
             onRetry={
               rt && !rt.isDefault
                 ? () => act.retryRuntimeCatalog?.(rt.id)

@@ -52,9 +52,7 @@ export function useModelCatalog(runtime?: string) {
   /* #899: an open thread IS this runtime's screen — its mount asks the
      catalog (and profile) even while the adapter sleeps; the ask is what
      lazy-starts it. */
-  useEffect(() => {
-    if (own) openRuntimeScreen(own);
-  }, [own]);
+  useEffect(() => (own ? openRuntimeScreen(own) : undefined), [own]);
   const ownCat = own
     ? modelCatalogOf({ runtimes: rows, modelCatalogs: cats }, { runtime: own })
     : undefined;

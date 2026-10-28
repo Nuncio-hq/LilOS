@@ -25,13 +25,18 @@ type RuntimeCatalog = {
 
 const catalogs = atom<Record<string, RuntimeCatalog>>({});
 
-/* D-#899: runtimes an open screen asked for. Fills only from
-   `openRuntimeScreen` — a status sync never adds one — so booting still
-   starts nothing (D-#866), while a runtime agent's chat, thread or page
-   asks the catalog even while the adapter sleeps (the ask itself
-   lazy-starts it, D-#761). Leaving the screen keeps the row: a later
-   open finds the catalog already landed. */
-const screenOpened = new Set<string>();
+/* D-#899: runtimes with a screen open right now (count of mounted
+   chats, threads and agent pages). Fills only from `openRuntimeScreen`,
+   and each screen releases its count on unmount — so booting starts
+   nothing (D-#866), and a screen that is gone never starts a runtime
+   later (a crash returning the row to idle must not re-ask). */
+const mounted = new Map<string, number>();
+/* Automatic re-asks of a mounted screen whose ask failed while its
+   runtime was already coming up (a cold start can outlive the engine
+   call's deadline). Bounded; Retry is the user's own. */
+const liveRetries = new Map<string, number>();
+const LIVE_RETRY_MS = 4_000;
+const LIVE_RETRY_MAX = 3;
 /* The screen's own ask, in flight ("loading") or refused ("failed" +
    the row's reason) — the chips read it as "Loading models…" / "Models
    unavailable" instead of a model the catalog never named. */
@@ -108,14 +113,15 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
     /* #899: a refusal remembered from before the screen opened (a live
        runtime's sync ask) still owes the screen its "failed" chip —
        otherwise it would spin "Loading models…" with no ask in flight. */
-    if (last.error !== undefined && screenOpened.has(r.id))
+    if (last.error !== undefined && mounted.has(r.id))
       setPhase(r.id, { state: "failed", detail: last.error });
     return;
   }
   inflight.add(r.id);
   /* #899: mark the ask in flight before it leaves — the chips read
-     "loading" from the first render after the screen opened. */
-  setPhase(r.id, { state: "loading" });
+     "loading" from the first render after the screen opened. A catalog
+     that already landed (even empty) keeps its chip while re-asked. */
+  if (!catalogs.get()[r.id]) setPhase(r.id, { state: "loading" });
   try {
     const res: ModelsListResult = await relay.listModels({ runtime: r.id });
     attempted.set(r.id, {
@@ -124,6 +130,7 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
       empty: (res.models ?? []).length === 0,
     });
     land(r.id, res);
+    liveRetries.delete(r.id);
     setPhase(r.id);
   } catch (e) {
     /* The runtime can't answer (not installed, down) — a screen that
@@ -131,7 +138,19 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
        (#899 AC-4); a boot ask just stays an empty catalog. */
     const error = e instanceof Error ? e.message : String(e);
     attempted.set(r.id, { key, at: Date.now(), empty: false, error });
-    if (screenOpened.has(r.id))
+    const tries = liveRetries.get(r.id) ?? 0;
+    if (mounted.has(r.id) && runtimeLive(r.id) && tries < LIVE_RETRY_MAX) {
+      /* The runtime is up or coming up — a cold start that outlived the
+         call's deadline. Stay "loading" and ask again shortly. */
+      liveRetries.set(r.id, tries + 1);
+      attempted.delete(r.id);
+      setTimeout(() => {
+        const row = relay.status
+          .get()
+          ?.result?.runtimes?.find((x) => x.id === r.id);
+        if (row && mounted.has(r.id)) void ask(row);
+      }, LIVE_RETRY_MS);
+    } else if (mounted.has(r.id))
       setPhase(r.id, { state: "failed", detail: error });
     else setPhase(r.id);
   } finally {
@@ -140,29 +159,51 @@ async function ask(r: RuntimeStatusRow): Promise<void> {
 }
 
 /** D-#899: a screen that shows this runtime's agent asks its catalog even
-   while the adapter sleeps — the ask is what lazy-starts it. A landed
-   catalog is not re-asked; a refused one is deduped on the row's signature
-   like every ask — the verdict changing (state/available/detail) is the
-   only signal a retry may answer — a screen mounted across status polls
-   must not spam the engine on each poll. `retryRuntimeCatalog` is the
-   explicit forget-and-ask. */
-export function openRuntimeScreen(runtime: string): void {
-  if (!runtime || runtime === defaultRuntimeId()) return;
-  screenOpened.add(runtime);
+   while the adapter sleeps — the ask is what lazy-starts it. Returns the
+   screen's release (call it on unmount). A landed catalog is not
+   re-asked; a refused one waits for Retry (`retryRuntimeCatalog`) or the
+   runtime coming up on its own — never a loop of restarts. */
+export function openRuntimeScreen(runtime: string): () => void {
+  if (!runtime || runtime === defaultRuntimeId()) return () => {};
+  mounted.set(runtime, (mounted.get(runtime) ?? 0) + 1);
+  askForScreen(runtime);
+  /* The agent page's editable fields come from the same lazy describe —
+     asking it here lands `agentsUpdatable` while idle too. */
+  const releaseProfile = openRuntimeProfile(runtime);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    releaseProfile();
+    const n = (mounted.get(runtime) ?? 1) - 1;
+    if (n > 0) mounted.set(runtime, n);
+    else mounted.delete(runtime);
+  };
+}
+
+/* A mounted screen's first ask: once per runtime until it lands or is
+   retried — whether or not the row says the runtime is installed (a
+   refusal is what gives the chip its reason). */
+function askForScreen(runtime: string): void {
+  if (catalogs.get()[runtime]?.options.length) return;
   const row = relay.status
     .get()
     ?.result?.runtimes?.find((r) => r.id === runtime);
-  if (row && !catalogs.get()[runtime]?.options.length) void ask(row);
-  /* The agent page's editable fields come from the same lazy describe —
-       asking it here lands `agentsUpdatable` while idle too. */
-  openRuntimeProfile(runtime);
+  if (!row) return;
+  const last = attempted.get(runtime);
+  if (last && !runtimeLive(runtime)) {
+    if (last.error !== undefined)
+      setPhase(runtime, { state: "failed", detail: last.error });
+    return;
+  }
+  void ask(row);
 }
 
-/** The failed chip's Retry: forget the refusal and ask like the screen
-    just opened. */
+/** The failed chip's Retry: forget the refusal and ask again. */
 export function retryRuntimeCatalog(runtime: string): void {
   attempted.delete(runtime);
-  openRuntimeScreen(runtime);
+  liveRetries.delete(runtime);
+  askForScreen(runtime);
 }
 
 const sync = () => {
@@ -171,20 +212,18 @@ const sync = () => {
   /* Only a runtime an agent runs on AND that is already running is
      asked — `models.list` lazy-starts the adapter (D-#761), so asking
      every hired row would spawn idle hires' engines at boot (D-#866).
-     An open screen's runtime is the exception (D-#899): it asks even
-     idle, and the ask is what starts it. A runtime started by real work
-     changes its status row, which asks again. */
+     A runtime started by real work changes its status row, which asks
+     again. A screen open on an idle runtime asks once (D-#899) — here
+     only when its row arrived after the screen opened. */
   const inUse = new Set(
     relay.employees.get().flatMap((e) => (e.runtime ? [e.runtime] : [])),
   );
   // The first row is the default engine — its catalog is the global one.
-  for (const r of rows.slice(1))
-    if (
-      r.available !== false &&
-      inUse.has(r.id) &&
-      (runtimeLive(r.id) || screenOpened.has(r.id))
-    )
+  for (const r of rows.slice(1)) {
+    if (r.available !== false && inUse.has(r.id) && runtimeLive(r.id))
       void ask(r);
+    else if (mounted.has(r.id) && !attempted.has(r.id)) askForScreen(r.id);
+  }
 };
 
 onMount(catalogs, () => {

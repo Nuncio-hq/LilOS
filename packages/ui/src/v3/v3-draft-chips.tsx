@@ -150,9 +150,11 @@ export function ModelChip({
   /* #899: selecting the agent IS opening its runtime's screen — the chip
      asks that runtime's catalog even while the adapter sleeps (the ask
      lazy-starts it). */
-  useEffect(() => {
-    if (own && rt) act.openRuntimeScreen?.(rt.id);
-  }, [own, rt, act]);
+  const screenRt = own && rt ? rt.id : undefined;
+  useEffect(
+    () => (screenRt ? act.openRuntimeScreen?.(screenRt) : undefined),
+    [screenRt, act],
+  );
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
        labels — never the default engine's list on an ACP agent (#872) —
@@ -227,13 +229,23 @@ export function ModelChip({
   const refreshOwn = act.refreshRuntimeModels;
   // Starts on the agent's own model with its default effort (the engine's
   // default when the agent names none), never a past pick.
-  const value =
-    pick ??
-    choiceFor(
-      agentModelId || cat.defaultModel || "",
-      cat.options,
-      agentModelId ? undefined : cat.defaultProvider,
-    );
+  const base = choiceFor(
+    agentModelId || cat.defaultModel || "",
+    cat.options,
+    agentModelId ? undefined : cat.defaultProvider,
+  );
+  /* #899: the agent page's effort pin is what the relay runs with — the
+     chip names it, not the model's default, when the model offers it. */
+  const pinned =
+    agent.effort &&
+    cat.options
+      .find(
+        (o) =>
+          o.id === base.model &&
+          (base.provider === undefined || o.provider === base.provider),
+      )
+      ?.efforts?.includes(agent.effort);
+  const value = pick ?? (pinned ? { ...base, effort: agent.effort } : base);
   return (
     <ModelPicker
       value={value}
