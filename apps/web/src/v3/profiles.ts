@@ -31,6 +31,24 @@ const described = atom<Record<string, AgentDescriptor>>({});
    when the runtime's own verdict changes (a failed engine coming up), not
    on every employee/status tick. */
 const attempted = new Map<string, string>();
+/* D-#899: runtimes with a screen open right now (`openRuntimeScreen`
+   counts them here) — their profiles describe even while the adapter
+   sleeps, once; a released screen never wakes a runtime later. */
+const pending = new Map<string, number>();
+
+/** D-#899: a screen showing this runtime's agent asks its profile even
+   while the adapter sleeps — the describe lazy-starts it and lands
+   `agentsUpdatable`, the page's editable fields. Returns the release. */
+export function openRuntimeProfile(runtime: string): () => void {
+  if (isDefaultRuntime(runtime)) return () => {};
+  pending.set(runtime, (pending.get(runtime) ?? 0) + 1);
+  void load().catch(() => {});
+  return () => {
+    const n = (pending.get(runtime) ?? 1) - 1;
+    if (n > 0) pending.set(runtime, n);
+    else pending.delete(runtime);
+  };
+}
 
 /** The profile fields the engine lets the app write (the `agents`
    capability's `detail.updatable`, D-#19). */
@@ -67,9 +85,16 @@ async function load(): Promise<void> {
         if (row?.available === false) return [];
         /* A coding runtime answers only when it is already up — a plain
            read must never npm-install an engine (D-#866); the record's
-           own fields fill the page until real work starts it. */
-        if (!isDefault && !runtimeLive(runtime)) return [];
+           own fields fill the page until real work starts it. An open
+           screen is the exception (D-#899): it marked the runtime
+           pending, and this describe is what lazy-starts the adapter. */
         const key = profileKey(runtime, e.profile);
+        if (
+          !isDefault &&
+          !runtimeLive(runtime) &&
+          (!pending.has(runtime ?? "") || attempted.has(key))
+        )
+          return [];
         const sig = row ? `${row.available}:${row.state ?? ""}` : "";
         return [[key, { key, profile: e.profile, runtime, sig }] as const];
       }),

@@ -1170,7 +1170,7 @@ export class AcpEngine {
        is bounded + non-fatal, so a wedge resolves as an empty catalog,
        never a hang). */
     await this.catalogProbe;
-    const models = catalogModels(this.catalog);
+    const models = catalogModels(this.catalog, this.opts.defaultEffort);
     const current = catalogModelOption(this.catalog)?.currentValue;
     return {
       models,

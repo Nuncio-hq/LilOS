@@ -262,6 +262,9 @@ const HERMES_EFFORT_LADDER = [
   "max",
 ] as const;
 
+/** #899: how long the catalog waits on `config.get reasoning`. */
+const EFFORT_READ_MS = 2_000;
+
 export async function listModels(
   gw: GatewayLike,
   opts: { refresh?: boolean } = {},
@@ -271,6 +274,22 @@ export async function listModels(
   default?: string;
   defaultProvider?: string;
 }> {
+  /* #899: the effort chip names the level turns actually run with — the
+     gateway's `config.get reasoning` (tui_gateway `_cfg_get_reasoning`:
+     the configured `agent.reasoning_effort`, "medium" when unset, "none"
+     when thinking is off). There is no `agent.reasoning_effort` key — the
+     gateway answers 4002 for it. Read beside `model.options` and bounded:
+     a refused or slow read just leaves the default unnamed, never a
+     failed or stalled list. */
+  const effortRead = Promise.race([
+    gw
+      .request("config.get", { key: "reasoning" })
+      .then((c) => (c as { value?: unknown } | undefined)?.value)
+      .catch(() => undefined),
+    new Promise<undefined>((done) =>
+      setTimeout(() => done(undefined), EFFORT_READ_MS),
+    ),
+  ]);
   const r = (await gw.request("model.options", {
     ...(opts.refresh ? { refresh: true } : {}),
   })) as {
@@ -278,6 +297,9 @@ export async function listModels(
     model?: unknown;
     provider?: unknown;
   };
+  const effortValue = await effortRead;
+  const configuredEffort =
+    typeof effortValue === "string" && effortValue ? effortValue : undefined;
   /* #92 AC-1: every authenticated provider row — a pick from another
      provider switches the session's provider, not just the model. */
   const rows = (r.providers ?? []).filter((p) => p.authenticated !== false);
@@ -323,6 +345,13 @@ export async function listModels(
         name: displayModelName(id),
         provider: slug,
         ...(efforts ? { efforts } : {}),
+        /* #899: name the configured level only on rows that can run it —
+            a non-reasoning model never takes an effort pick. */
+        ...(efforts &&
+        configuredEffort &&
+        (efforts as readonly string[]).includes(configuredEffort)
+          ? { defaultEffort: configuredEffort }
+          : {}),
         ...(cap?.fast === true ? { fast: true } : {}),
         ...(contextWindow ? { contextWindow } : {}),
       });

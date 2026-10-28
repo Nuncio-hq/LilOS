@@ -24,6 +24,9 @@ type ComposerProps = Pick<
   | "onModel"
   | "picker"
   | "modelStatic"
+  | "catalogState"
+  | "catalogDetail"
+  | "onCatalogRetry"
   | "defaultModel"
   | "defaultProvider"
   | "modelOpen"
@@ -132,6 +135,9 @@ export function ThreadComposer({
       onModel={p.onModel}
       picker={p.picker}
       modelStatic={p.modelStatic}
+      catalogState={p.catalogState}
+      catalogDetail={p.catalogDetail}
+      onCatalogRetry={p.onCatalogRetry}
       modelOpen={p.modelOpen}
       onModelOpen={p.onModelOpen}
       choice={

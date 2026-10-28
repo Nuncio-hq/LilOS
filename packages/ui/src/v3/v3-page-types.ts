@@ -120,6 +120,13 @@ export type V3Actions = {
   /** Re-reads one non-default runtime's own catalog (#895); rejects when it
      failed (the app has already said why). */
   refreshRuntimeModels?: (runtime: string) => Promise<void>;
+  /** #899 — a runtime agent's surface opened (its chip selected, its
+     thread or page mounted): asks that runtime's catalog and profile even
+     while the adapter sleeps — the ask is what lazy-starts it. No-op once
+     the catalog has landed. */
+  openRuntimeScreen?: (runtime: string) => () => void;
+  /** The "Models unavailable" chip's retry — re-asks after a refusal. */
+  retryRuntimeCatalog?: (runtime: string) => void;
   /** "New project from a folder…": the app asks for a folder (its own
      dialog), makes a project of it (a folder that already has one answers
      that project) and calls `onCreated` with its id once it is in

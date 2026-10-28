@@ -29,7 +29,12 @@ import {
 } from "./employees";
 import { pickFromLabel } from "./models";
 import { isDefaultRuntime } from "./runtime-ids";
-import { pickForRuntime, refreshRuntimeModels } from "./runtimes";
+import {
+  openRuntimeScreen,
+  pickForRuntime,
+  refreshRuntimeModels,
+  retryRuntimeCatalog,
+} from "./runtimes";
 import { searchMessages } from "./search";
 import { v3SettingsActions } from "./settings-actions";
 import { employeeOfConversation } from "./threads";
@@ -243,6 +248,12 @@ export function makeV3Actions(caps: V3Capabilities): V3DataActions {
         sayError(describeActionError("Couldn't refresh the model list", e));
         throw e;
       }),
+    /* #899: a runtime agent's surface opening asks that runtime's catalog
+       + profile even while idle — the ask lazy-starts the adapter. */
+    openRuntimeScreen: (runtime) => openRuntimeScreen(runtime),
+    /* The "Models unavailable" chip's retry — quiet: a refused re-ask
+       lands the chip back on "failed", which is the message. */
+    retryRuntimeCatalog: (runtime) => retryRuntimeCatalog(runtime),
     renameThread: (threadId, title) =>
       toastOnFail(
         "Couldn't rename the thread",

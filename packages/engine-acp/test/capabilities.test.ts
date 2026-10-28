@@ -1,5 +1,6 @@
 import type * as acp from "@agentclientprotocol/sdk";
 import { describe, expect, test } from "vitest";
+import { devinSpec } from "../shims/devin.js";
 import {
   type AcpSessionConfig,
   catalogEffortOption,
@@ -122,6 +123,63 @@ describe("learned catalog -> model/effort/fast descriptors", () => {
     expect(rows[0].defaultEffort).toBe("medium");
     /* a model_config select offering "fast" marks rows fast:true. */
     expect(rows[0].fast).toBe(true);
+  });
+
+  test("the launch spec's defaultEffort outranks the probe's currentValue (D-#899)", () => {
+    /* Turns run with the spec's level (sessionStart applies it), so the
+       catalog names it — the chip must not read the probe's "medium". */
+    const rows = catalogModels(learned(), "high");
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => r.defaultEffort === "high")).toBe(true);
+  });
+
+  test("a spec level the session never advertised keeps the probe's value", () => {
+    /* The pick would skip on the session (D-#846) — reporting it as the
+       default would name a level no turn can run. */
+    const rows = catalogModels(learned(), "max");
+    expect(rows[0].defaultEffort).toBe("medium");
+  });
+
+  test("the shipped Devin catalog always reports a default model and effort (D-#899)", () => {
+    /* devinShim pins them: the agent's default model is the catalog's
+       `default` (the model option's currentValue on `devin acp --model`),
+       and the spec's defaultEffort lands on every row. */
+    expect(devinSpec.agent?.model).toBe("swe-2-high");
+    expect(devinSpec.defaultEffort).toBe("max");
+    const c: AcpSessionConfig = { options: new Map() };
+    learnSessionConfig(
+      c,
+      sessionAd({
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "swe-2-high",
+            options: [
+              { value: "swe-2-high", name: "SWE-2 High" },
+              { value: "swe-2-max", name: "SWE-2 Max" },
+            ],
+          },
+          {
+            id: "thought_level",
+            name: "Effort",
+            category: "thought_level",
+            type: "select",
+            currentValue: "high",
+            options: ["low", "medium", "high", "xhigh", "max"].map((v) => ({
+              value: v,
+              name: v,
+            })),
+          },
+        ] as acp.SessionConfigOption[],
+      }),
+    );
+    const rows = catalogModels(c, devinSpec.defaultEffort);
+    expect(rows.map((r) => r.id)).toEqual(["swe-2-high", "swe-2-max"]);
+    expect(rows.every((r) => r.defaultEffort === "max")).toBe(true);
+    expect(catalogModelOption(c)?.currentValue).toBe("swe-2-high");
   });
 
   test("category lookups find the model/effort/fast write targets", () => {

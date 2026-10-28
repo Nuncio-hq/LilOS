@@ -1,4 +1,5 @@
-import { CpuIcon, MessageSquareIcon } from "lucide-react";
+import { CpuIcon, Loader2Icon, MessageSquareIcon } from "lucide-react";
+import { useEffect } from "react";
 import { choiceFor, ModelPicker } from "../chat/model-picker";
 import type { ModelChoice } from "../types";
 import { ChipMenu } from "./v3-chip-menu";
@@ -146,12 +147,56 @@ export function ModelChip({
   const rtKnown = !agent.runtime || !!rt;
   const own = rtKnown && !!rt && !rt.isDefault;
   const cat = modelCatalogOf(data, agent);
+  /* #899: selecting the agent IS opening its runtime's screen — the chip
+     asks that runtime's catalog even while the adapter sleeps (the ask
+     lazy-starts it). */
+  const screenRt = own && rt ? rt.id : undefined;
+  useEffect(
+    () => (screenRt ? act.openRuntimeScreen?.(screenRt) : undefined),
+    [screenRt, act],
+  );
   if (!cat) {
     /* A runtime agent whose catalog hasn't landed menus its OWN runtime's
        labels — never the default engine's list on an ACP agent (#872) —
        and keeps its chip even when the runtime lists none: the agent's own
        model, read-only, until its catalog arrives (#890). */
     const choices = !rtKnown ? [] : own ? (rt.models ?? []) : data.modelChoices;
+    /* #899: the screen's own ask is in flight or refused — the chip says
+       "Loading models…" / "Models unavailable" (click retries), never a
+       model this runtime never named. A host that asks (`openRuntimeScreen`)
+       spins until the catalog lands — the first frame, before the effect's
+       ask, must not flash the fallback label; a host without the action
+       keeps the static label. */
+    const asking =
+      rt?.catalogState ??
+      (act.openRuntimeScreen && !rt?.catalogLanded ? "loading" : undefined);
+    if (own && choices.length === 0 && asking) {
+      if (asking === "failed")
+        return (
+          <button
+            type="button"
+            data-slot="model-chip-failed"
+            title={`Models unavailable — ${rt.catalogDetail ?? "the engine did not answer"}. Click to retry`}
+            onClick={() => act.retryRuntimeCatalog?.(rt.id)}
+            className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 @max-[560px]:shrink-0 @max-[560px]:gap-0 @max-[560px]:px-1 text-[12.5px] text-muted-foreground hover:text-foreground"
+          >
+            <CpuIcon className="size-3.5 shrink-0" />
+            <span className="truncate @max-[560px]:hidden">
+              Models unavailable
+            </span>
+          </button>
+        );
+      return (
+        <span
+          data-slot="model-chip-loading"
+          title={`Asking ${rt.label} for its models`}
+          className="inline-flex h-6 min-w-0 items-center gap-1.5 px-1.5 @max-[560px]:shrink-0 @max-[560px]:gap-0 @max-[560px]:px-1 text-[12.5px] text-muted-foreground"
+        >
+          <Loader2Icon className="size-3.5 shrink-0 animate-spin" />
+          <span className="truncate @max-[560px]:hidden">Loading models…</span>
+        </span>
+      );
+    }
     const body = (
       <>
         <CpuIcon className="size-3.5 shrink-0" />
@@ -184,13 +229,23 @@ export function ModelChip({
   const refreshOwn = act.refreshRuntimeModels;
   // Starts on the agent's own model with its default effort (the engine's
   // default when the agent names none), never a past pick.
-  const value =
-    pick ??
-    choiceFor(
-      agentModelId || cat.defaultModel || "",
-      cat.options,
-      agentModelId ? undefined : cat.defaultProvider,
-    );
+  const base = choiceFor(
+    agentModelId || cat.defaultModel || "",
+    cat.options,
+    agentModelId ? undefined : cat.defaultProvider,
+  );
+  /* #899: the agent page's effort pin is what the relay runs with — the
+     chip names it, not the model's default, when the model offers it. */
+  const pinned =
+    agent.effort &&
+    cat.options
+      .find(
+        (o) =>
+          o.id === base.model &&
+          (base.provider === undefined || o.provider === base.provider),
+      )
+      ?.efforts?.includes(agent.effort);
+  const value = pick ?? (pinned ? { ...base, effort: agent.effort } : base);
   return (
     <ModelPicker
       value={value}

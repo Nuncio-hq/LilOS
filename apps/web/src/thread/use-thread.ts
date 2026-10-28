@@ -104,8 +104,16 @@ export function useThreadWith(
   const channel = channels.find((c) => c.id === conv?.channelId);
   const employee = employees.find((e) => e.id === channel?.employeeId);
   /* #895: the thread's agent decides whose models the composer lists. */
-  const { catalog, defaultModel, defaultProvider, picker, own } =
-    useModelCatalog(employee?.runtime);
+  const {
+    catalog,
+    defaultModel,
+    defaultProvider,
+    picker,
+    own,
+    catalogState,
+    catalogDetail,
+    retryCatalog,
+  } = useModelCatalog(employee?.runtime);
 
   /* Unsent drafts live outside the composer: one key per conversation
      (issue #103). Switching sessions — or reloading — swaps in the stored
@@ -298,6 +306,12 @@ export function useThreadWith(
     defaultModel,
     defaultProvider,
     picker,
+    /* #899: the runtime's own catalog ask, in flight or refused — the
+       composer chip reads "Loading models…" / "Models unavailable"
+       instead of the pinned model it cannot list. */
+    catalogState,
+    catalogDetail,
+    onCatalogRetry: retryCatalog,
     /* The pinned pick, else the session's, else the agent's own default —
        the chain the picker's `sessionChoice` reads. */
     modelStatic:

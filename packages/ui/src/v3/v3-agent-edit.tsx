@@ -6,13 +6,14 @@ import {
   useRef,
   useState,
 } from "react";
+import { effortLabel } from "../chat/effort-picker";
 import { cn } from "../lib/utils";
 import { Btn, Prop } from "./v3-bits";
 import { ChipMenu } from "./v3-chip-menu";
 import { EscLayer } from "./v3-keys";
 import type { V3Actions } from "./v3-page-types";
 import { Switch } from "./v3-settings-bits";
-import type { V3Agent, V3AgentPatch } from "./v3-types";
+import type { V3Agent, V3AgentPatch, V3Runtime } from "./v3-types";
 
 /* Editing an agent in place, Notion-style (#872): there is no edit mode
    and no page-wide Save/Cancel. A writable field swaps its text for an
@@ -200,12 +201,20 @@ export function ModelProp({
   agent,
   choices,
   save,
+  rt,
+  onRetry,
 }: {
   icon: ReactNode;
   agent: V3Agent;
   /** The owning runtime's picker labels; empty = the model stays text. */
   choices: string[];
   save?: FieldSave;
+  /** The agent's own runtime row — #899: while its catalog ask is in
+      flight the row reads "Loading models…"; a refused ask reads "Models
+      unavailable" and `onRetry` re-asks. Never the fallback "Engine
+      default" while the screen's ask is live. */
+  rt?: V3Runtime;
+  onRetry?: () => void;
 }) {
   const [held, setHeld] = useState<{ words: string; model: string }>();
   /* A newer pick supersedes a pending prompt: its generation counter
@@ -213,6 +222,7 @@ export function ModelProp({
      the superseded pick (#872). */
   const pick = useRef(0);
   const canPick = !!save && choices.length > 0;
+  const runtimeAsk = rt && !rt.isDefault && choices.length === 0;
   return (
     <>
       <Prop icon={icon} label="Default model">
@@ -234,6 +244,23 @@ export function ModelProp({
             label={<span className="truncate">{agent.model}</span>}
             options={choices.map((m) => ({ id: m, node: <span>{m}</span> }))}
           />
+        ) : runtimeAsk ? (
+          rt.catalogState === "failed" ? (
+            <button
+              type="button"
+              title={`Models unavailable — ${rt.catalogDetail ?? "the engine did not answer"}. Click to retry`}
+              onClick={onRetry}
+              className="underline-offset-2 hover:underline"
+            >
+              Models unavailable
+            </button>
+          ) : rt.catalogLanded ? (
+            /* The runtime answered with no models: the agent's own is the
+               only name (#890's static chip on the page). */
+            agent.model
+          ) : (
+            <span className="text-muted-foreground">Loading models…</span>
+          )
         ) : (
           agent.model
         )}
@@ -273,6 +300,9 @@ export function ModelProp({
    for its model, plus "Model default" which clears the pin (`effort: ""`
    on the record). Saved the moment a pick lands; a runtime that reports
    no levels gets no row at all (the caller checks `ladder`). */
+/** The effort menu's "no pin" row — never a real ladder value. */
+const CLEAR_EFFORT = "\u0000default";
+
 export function EffortProp({
   icon,
   agent,
@@ -285,7 +315,14 @@ export function EffortProp({
   ladder: { efforts: string[]; defaultEffort?: string };
   save?: FieldSave;
 }) {
-  const shown = agent.effort ?? "Model default";
+  /* #899: no pin shows the level turns actually run with — the model's
+     reported default ("Max (default)"), never a bare "Model default". The
+     clearing row keeps its own id so a pin equal to the default stays a
+     pin. Only an engine that names no default falls back to the words. */
+  const unpinned = ladder.defaultEffort
+    ? `${effortLabel(ladder.defaultEffort)} (default)`
+    : "Model default";
+  const shown = agent.effort ? effortLabel(agent.effort) : unpinned;
   return (
     <Prop icon={icon} label="Default effort">
       {save ? (
@@ -293,16 +330,19 @@ export function EffortProp({
           below
           title="Default effort"
           ariaLabel="Default effort"
-          value={shown}
+          value={agent.effort ?? CLEAR_EFFORT}
           onPick={(next) => {
-            if (next !== shown)
-              void save.run({ effort: next === "Model default" ? "" : next });
+            if (next !== (agent.effort ?? CLEAR_EFFORT))
+              void save.run({ effort: next === CLEAR_EFFORT ? "" : next });
           }}
           label={<span className="truncate">{shown}</span>}
-          options={["Model default", ...ladder.efforts].map((e) => ({
-            id: e,
-            node: <span>{e}</span>,
-          }))}
+          options={[
+            { id: CLEAR_EFFORT, node: <span>{unpinned}</span> },
+            ...ladder.efforts.map((e) => ({
+              id: e,
+              node: <span>{effortLabel(e)}</span>,
+            })),
+          ]}
         />
       ) : (
         shown

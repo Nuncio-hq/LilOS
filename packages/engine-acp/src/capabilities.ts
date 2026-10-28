@@ -131,7 +131,10 @@ export function configByCategory(
  * `defaultEffort` is the current value). A `model_config` option offering
  * a fast tier marks rows `fast: true`.
  */
-export function catalogModels(catalog: AcpSessionConfig): ModelOption[] {
+export function catalogModels(
+  catalog: AcpSessionConfig,
+  specDefaultEffort?: string,
+): ModelOption[] {
   const models = configByCategory(catalog, "model");
   const efforts = configByCategory(catalog, "thought_level").flatMap(
     (o) => o.choices,
@@ -139,6 +142,13 @@ export function catalogModels(catalog: AcpSessionConfig): ModelOption[] {
   const currentEffort = configByCategory(catalog, "thought_level").find(
     (o) => o.currentValue,
   )?.currentValue;
+  /* D-#899: turns run with the launch spec's defaultEffort — sessionStart
+     applies it — so the catalog names that level, not the probe session's
+     currentValue, whenever the spec sets one the session advertises. */
+  const defaultEffort =
+    specDefaultEffort && efforts.some((e) => e.value === specDefaultEffort)
+      ? specDefaultEffort
+      : currentEffort;
   const fast = catalogHasFast(catalog);
   const rows: ModelOption[] = [];
   for (const m of models) {
@@ -149,7 +159,7 @@ export function catalogModels(catalog: AcpSessionConfig): ModelOption[] {
         ...(efforts.length
           ? {
               efforts: efforts.map((e) => e.value),
-              ...(currentEffort ? { defaultEffort: currentEffort } : {}),
+              ...(defaultEffort ? { defaultEffort } : {}),
             }
           : {}),
         ...(fast ? { fast: true } : {}),

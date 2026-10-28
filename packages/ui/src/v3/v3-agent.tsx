@@ -8,7 +8,7 @@ import {
   PlugIcon,
   SparklesIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Connectors, PILL } from "./v3-agent-connectors";
 import {
   EffortProp,
@@ -153,6 +153,14 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
      jargon row ("acp:devin", "Profile: claude", "hired Oct 27" all went).
      `rt` absent (no runtimes known) leaves the default engine's world. */
   const rt = outside ? undefined : runtimeOf(data, agent);
+  /* #899: the agent page IS this runtime's screen — opening it asks the
+     catalog (and the profile that fills `updatable`) even while the
+     adapter sleeps; the ask is what lazy-starts it. */
+  const screenRt = rt && !rt.isDefault ? rt.id : undefined;
+  useEffect(
+    () => (screenRt ? act.openRuntimeScreen?.(screenRt) : undefined),
+    [screenRt, act],
+  );
   const runsOn = outside ? undefined : runtimeLabelOf(data, agent);
   const fields = agentPageFields(data, agent);
   const canDescription = canEdit && fields.includes("description");
@@ -318,6 +326,13 @@ function AgentView({ data, go, act, agent }: V3PageProps & { agent: V3Agent }) {
             agent={agent}
             choices={modelChoicesOf(data, agent)}
             save={canModel ? modelSave : undefined}
+            /* A host that never asks (the prototype) keeps the text. */
+            rt={act.openRuntimeScreen ? rt : undefined}
+            onRetry={
+              rt && !rt.isDefault
+                ? () => act.retryRuntimeCatalog?.(rt.id)
+                : undefined
+            }
           />
         )}
         {/* #872: the standing effort pick — only where the runtime reports

@@ -78,6 +78,72 @@ describe("ModelChip without a landed catalog", () => {
   });
 });
 
+/* #899: while the screen's own catalog ask is in flight the chip reads
+   "Loading models…"; a refused ask reads "Models unavailable" and clicking
+   retries — never "Engine default", never the runtime's pinned label. */
+describe("ModelChip while its own catalog ask is in flight", () => {
+  const dataWithState = (state: "loading" | "failed", detail?: string) =>
+    ({
+      modelChoices: ["Opus 5.5"],
+      runtimes: [
+        { id: "hermes", label: "Hermes", isDefault: true },
+        {
+          id: "acp:devin",
+          label: "Devin",
+          catalogState: state,
+          ...(detail ? { catalogDetail: detail } : {}),
+        },
+      ],
+    }) as unknown as V3Data;
+
+  test("loading reads Loading models…, not the agent's model", () => {
+    const c = chip(dataWithState("loading"), "acp:devin", "Swe-2-high");
+    const el = c.querySelector('[data-slot="model-chip-loading"]');
+    expect(el?.textContent).toContain("Loading models…");
+    expect(el?.textContent).not.toContain("Swe-2-high");
+    expect(el?.textContent).not.toContain("Engine default");
+  });
+
+  test("failed reads Models unavailable, names the reason, and retries", () => {
+    const retry = vi.fn();
+    const c = render(
+      <ModelChip
+        data={dataWithState("failed", "devin not on PATH")}
+        act={{ retryRuntimeCatalog: retry } as V3Actions}
+        agent={{ runtime: "acp:devin" } as V3Agent}
+        onPick={vi.fn()}
+        label="Swe-2-high"
+        onLabel={vi.fn()}
+        open={false}
+        onOpen={vi.fn()}
+      />,
+    ).container;
+    const btn = c.querySelector('[data-slot="model-chip-failed"]');
+    expect(btn?.textContent).toContain("Models unavailable");
+    expect(btn?.getAttribute("title")).toContain("devin not on PATH");
+    expect(c.textContent).not.toContain("Engine default");
+    fireEvent.click(btn as HTMLElement);
+    expect(retry).toHaveBeenCalledWith("acp:devin");
+  });
+
+  test("selecting the agent asks its runtime (openRuntimeScreen)", () => {
+    const open = vi.fn();
+    render(
+      <ModelChip
+        data={dataWithState("loading")}
+        act={{ openRuntimeScreen: open } as V3Actions}
+        agent={{ runtime: "acp:devin" } as V3Agent}
+        onPick={vi.fn()}
+        label=""
+        onLabel={vi.fn()}
+        open={false}
+        onOpen={vi.fn()}
+      />,
+    );
+    expect(open).toHaveBeenCalledWith("acp:devin");
+  });
+});
+
 describe("folderHint — the Project chip's tooltip carries the git facts (#886)", () => {
   test("a branch, no git, and unknown", () => {
     expect(folderHint({ branch: "trunk" } as never)).toBe(
