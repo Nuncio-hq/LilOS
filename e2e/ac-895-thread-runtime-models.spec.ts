@@ -24,7 +24,7 @@ import {
  * stack. Paused product (`LILOS_COMPANY: "0"`): no Work/Goals/People.
  *
  *   AC-1 only the runtime's own rows; the pick is a checked row
- *   AC-2 catalog not landed → read-only chip, then the dropdown appears
+ *   AC-2 catalog refused → "Models unavailable" (#899), never Hermes's list
  *   AC-3 the effort menu lists the runtime's levels for the picked model
  *   AC-4 Refresh re-asks the runtime; no Edit models…
  *   AC-5 a Hermes thread is unchanged
@@ -163,7 +163,7 @@ const staticChip = (page: Page) =>
 
 let devinThread = "";
 
-test("the Devin thread opens with Devin's pick as a read-only chip until its catalog lands (AC-2)", async ({
+test("the Devin thread never shows Hermes's list while its catalog can't land (AC-2, as #899 refines it)", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -204,10 +204,14 @@ test("the Devin thread opens with Devin's pick as a read-only chip until its cat
   );
   await page.reload();
 
-  await expect(staticChip(page)).toContainText(/swe-2-high/i, {
-    timeout: 30_000,
-  });
+  /* #899: the open thread asks Devin itself; a refused ask ("adapter
+     still starting") reads "Models unavailable" with Retry — never
+     Hermes's list, never "Engine default". */
+  await expect(
+    v3Peek(page).locator('[data-slot="model-chip-failed"]'),
+  ).toContainText("Models unavailable", { timeout: 30_000 });
   await expect(trigger(page)).toHaveCount(0);
+  await expect(v3Peek(page)).not.toContainText("Engine default");
   await expect(v3Peek(page)).not.toContainText("Fake");
   /* Paused product: the sidebar has no Work / Goals / People. */
   for (const name of ["Work", "Goals", "People"])
